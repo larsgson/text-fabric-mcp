@@ -6,7 +6,6 @@ import logging
 import os
 
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from text_fabric_mcp.quiz_engine import QuizStore, generate_session
@@ -20,14 +19,6 @@ app = FastAPI(
     title="Text-Fabric MCP API",
     description="Biblical text analysis API powered by Text-Fabric",
     version="0.1.0",
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
 )
 
 engine = TFEngine()
