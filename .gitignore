@@ -1,0 +1,36 @@
+# Legacy BibleOL (kept for reference, not part of new codebase)
+example/
+
+# General
+*#
+*~
+TAGS
+TSTAGS
+.idea/
+.DS_Store
+
+# Claude Code (local dev only)
+.claude/
+claude_desktop_config.json
+
+# Python / bible-mcp
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+.env
+*.egg
+.pytest_cache/
+~/.text-fabric/
+
+# Quiz storage
+quizzes/
+
+# Frontend (separate repo: hebrew-quizz)
+frontend/
+frontend_v1/
+frontend_v2/
+frontend_v3/

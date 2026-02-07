@@ -1,0 +1,16 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.git/
+.claude/
+example/
+frontend/
+frontend_v1/
+frontend_v2/
+frontend_v3/
+quizzes/
+*.egg
+.env

@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "text-fabric-mcp"
+version = "0.1.0"
+description = "Biblical text analysis API and MCP server powered by Text-Fabric"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp[cli]>=1.0.0",
+    "text-fabric>=12.0.0",
+    "pydantic>=2.0.0",
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.27.0",
+    "anthropic>=0.40.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "httpx>=0.27.0",
+]
+
+[project.scripts]
+tf-mcp = "text_fabric_mcp.server:main"
+tf-api = "text_fabric_mcp.api:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/text_fabric_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
