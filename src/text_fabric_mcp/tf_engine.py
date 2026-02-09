@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import os
-from pathlib import Path
 from typing import Any
 
 from tf.app import use
@@ -88,22 +87,9 @@ class TFEngine:
             logger.info(
                 "Loading %s from %s (HOME=%s) ...", display_name, org_repo, home
             )
-            # Log what's on disk before loading
-            tf_data_dir = Path(home) / "text-fabric-data"
-            if tf_data_dir.exists():
-                for p in sorted(tf_data_dir.rglob("*"))[:50]:
-                    logger.info("  TF cache: %s", p)
-            else:
-                logger.info("  TF cache dir does not exist: %s", tf_data_dir)
-
-            api = use(org_repo, silent="auto")
-
+            api = use(org_repo, silent="deep")
             # Verify the API initialized properly
             if not hasattr(api, "T") or not hasattr(api.F, "otype"):
-                # Log what's on disk after failed load
-                if tf_data_dir.exists():
-                    for p in sorted(tf_data_dir.rglob("*"))[:50]:
-                        logger.error("  TF cache after fail: %s", p)
                 raise RuntimeError(
                     f"Failed to load corpus '{corpus}' from {org_repo}. "
                     f"HOME={home}. "

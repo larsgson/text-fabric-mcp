@@ -9,12 +9,19 @@ RUN pip install --no-cache-dir .
 # Copy system prompts for chat
 COPY system_prompt.md system_prompt_quiz.md ./
 
-# Single persistent volume at /data.
-# Set HOME=/data so Text-Fabric writes its cache to /data/text-fabric-data.
-# Quiz storage also lives under /data via QUIZ_DIR.
+# Pre-download Text-Fabric corpora at build time.
+# This avoids GitHub API rate limits at runtime on Railway.
+ENV HOME=/root
+RUN python -c "from tf.app import use; use('ETCBC/bhsa', silent='deep'); use('ETCBC/nestle1904', silent='deep')"
+
+# At runtime, HOME=/data (persistent volume) for quiz storage.
+# Copy the pre-downloaded TF data into /data on first start (see entrypoint).
 ENV HOME=/data
 ENV QUIZ_DIR=/data/quizzes
 
+COPY entrypoint.sh ./
+RUN chmod +x entrypoint.sh
+
 EXPOSE 8000
 
-CMD ["tf-api"]
+ENTRYPOINT ["./entrypoint.sh"]
