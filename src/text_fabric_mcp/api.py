@@ -263,12 +263,21 @@ def _provision_tf_data():
     if not data_dir.exists():
         return  # Local dev — no volume
 
-    marker = data_dir / "text-fabric-data" / ".cache-ok"
+    # Marker version: bump this to force re-provisioning after image changes.
+    marker = data_dir / "text-fabric-data" / ".cache-v2"
     for d in ["/data/text-fabric-data", "/data/quizzes"]:
         Path(d).mkdir(parents=True, exist_ok=True)
 
     src = Path("/root/text-fabric-data")
     dst = data_dir / "text-fabric-data"
+
+    logger.info(
+        "TF provision check: marker=%s exists=%s, src=%s exists=%s",
+        marker,
+        marker.exists(),
+        src,
+        src.exists(),
+    )
 
     if not marker.exists() and src.exists():
         logger.info("Provisioning Text-Fabric data from Docker image...")
@@ -286,7 +295,7 @@ def _provision_tf_data():
                 logger.info("  Removing compiled cache: %s", tf_cache)
                 shutil.rmtree(tf_cache)
 
-        # Diagnostic: log what's available
+        # Log what's available
         for corpus_path in ["ETCBC/bhsa", "ETCBC/nestle1904"]:
             tf_dir = dst / "github" / corpus_path / "tf"
             if tf_dir.exists():
@@ -295,14 +304,21 @@ def _provision_tf_data():
             else:
                 logger.warning("  %s: tf/ directory MISSING", corpus_path)
 
+        # Remove old markers
+        for old in dst.glob(".cache-*"):
+            old.unlink(missing_ok=True)
+        for old in dst.glob(".runtime-*"):
+            old.unlink(missing_ok=True)
+
         marker.touch()
         logger.info(
             "TF data provisioned. Binary caches will be compiled on first load."
         )
-    elif not src.exists() and not marker.exists():
+    elif marker.exists():
+        logger.info("TF data already provisioned (marker exists).")
+    elif not src.exists():
         logger.warning(
-            "No pre-downloaded TF data at %s and no cached data. "
-            "TF will attempt to download at runtime.",
+            "No pre-downloaded TF data at %s. TF will attempt to download at runtime.",
             src,
         )
 
