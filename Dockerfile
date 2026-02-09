@@ -11,17 +11,20 @@ COPY system_prompt.md system_prompt_quiz.md ./
 
 # Pre-download Text-Fabric corpora at build time.
 # This avoids GitHub API rate limits at runtime on Railway.
+# Verify that the download succeeded by checking for key files.
 ENV HOME=/root
-RUN python -c "from tf.app import use; use('ETCBC/bhsa', silent='deep'); use('ETCBC/nestle1904', silent='deep')"
+RUN python -c "\
+from tf.app import use; \
+use('ETCBC/bhsa', silent='deep'); \
+use('ETCBC/nestle1904', silent='deep')" \
+ && test -f /root/text-fabric-data/github/ETCBC/bhsa/tf/2021/otext.tf \
+ && echo '=== TF pre-download OK ===' \
+ && find /root/text-fabric-data -maxdepth 4 -type d | head -20
 
-# At runtime, HOME=/data (persistent volume) for quiz storage.
-# Copy the pre-downloaded TF data into /data on first start (see entrypoint).
+# At runtime, HOME=/data (persistent volume).
 ENV HOME=/data
 ENV QUIZ_DIR=/data/quizzes
 
-COPY entrypoint.sh ./
-RUN chmod +x entrypoint.sh
-
 EXPOSE 8000
 
-ENTRYPOINT ["./entrypoint.sh"]
+CMD ["tf-api"]
