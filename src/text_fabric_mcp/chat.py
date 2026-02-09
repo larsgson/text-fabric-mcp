@@ -11,14 +11,21 @@ from typing import Any
 from google import genai
 from google.genai import types
 
+from text_fabric_mcp.quiz_engine import generate_session
+from text_fabric_mcp.quiz_models import FeatureConfig, FeatureVisibility, QuizDefinition
 from text_fabric_mcp.tf_engine import TFEngine
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = (Path(__file__).parent.parent.parent / "system_prompt.md").read_text()
+_PROMPTS_DIR = Path(__file__).parent.parent.parent
+SYSTEM_PROMPT = (_PROMPTS_DIR / "system_prompt.md").read_text()
+SYSTEM_PROMPT_QUIZ = (_PROMPTS_DIR / "system_prompt_quiz.md").read_text()
 
-# Tool declarations for the Gemini API — mirror the MCP tools
-TOOL_DECLARATIONS = [
+# ---------------------------------------------------------------------------
+# Tool declarations shared by both chat modes
+# ---------------------------------------------------------------------------
+
+_EXPLORATION_TOOLS = [
     {
         "name": "list_corpora",
         "description": "List available corpora.",
@@ -141,7 +148,68 @@ TOOL_DECLARATIONS = [
     },
 ]
 
-TOOLS = types.Tool(function_declarations=TOOL_DECLARATIONS)
+_BUILD_QUIZ_TOOL = {
+    "name": "build_quiz",
+    "description": (
+        "Build and validate a quiz definition. Runs the search template against "
+        "Text-Fabric to verify it produces results and returns the complete quiz "
+        "definition JSON with a preview. Nothing is stored on the server."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string", "description": "Quiz title"},
+            "book": {"type": "string", "description": "Book name"},
+            "chapter_start": {"type": "integer", "description": "Starting chapter"},
+            "chapter_end": {"type": "integer", "description": "Ending chapter"},
+            "verse_start": {
+                "type": "integer",
+                "description": "Starting verse (omit for entire chapter)",
+            },
+            "verse_end": {
+                "type": "integer",
+                "description": "Ending verse (omit for entire chapter)",
+            },
+            "corpus": {"type": "string", "description": "hebrew or greek"},
+            "search_template": {
+                "type": "string",
+                "description": "Text-Fabric search template (e.g. 'word sp=verb vs=qal')",
+            },
+            "show_features": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Features shown as context (e.g. ['gloss', 'lexeme'])",
+            },
+            "request_features": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Features the student must answer (e.g. ['verbal_stem', 'verbal_tense'])",
+            },
+            "max_questions": {
+                "type": "integer",
+                "description": "Max questions (0 = all)",
+            },
+            "randomize": {"type": "boolean", "description": "Shuffle question order"},
+            "description": {"type": "string", "description": "Quiz description"},
+        },
+        "required": [
+            "title",
+            "book",
+            "chapter_start",
+            "search_template",
+            "request_features",
+        ],
+    },
+}
+
+# Tool sets for each chat mode
+GENERAL_TOOLS = types.Tool(function_declarations=_EXPLORATION_TOOLS)
+QUIZ_TOOLS = types.Tool(function_declarations=_EXPLORATION_TOOLS + [_BUILD_QUIZ_TOOL])
+
+
+# ---------------------------------------------------------------------------
+# Tool execution
+# ---------------------------------------------------------------------------
 
 
 def _execute_tool(engine: TFEngine, name: str, args: dict[str, Any]) -> Any:
@@ -199,30 +267,76 @@ def _execute_tool(engine: TFEngine, name: str, args: dict[str, Any]) -> Any:
             word_index=args.get("word_index", 0),
             corpus=args.get("corpus", "hebrew"),
         )
+    elif name == "build_quiz":
+        return _execute_build_quiz(engine, args)
     else:
         return {"error": f"Unknown tool: {name}"}
 
 
-def chat(
+def _execute_build_quiz(engine: TFEngine, args: dict[str, Any]) -> Any:
+    """Build and validate a quiz definition."""
+    chapter_end = args.get("chapter_end") or args["chapter_start"]
+    show_features = args.get("show_features") or ["gloss"]
+    request_features = args.get("request_features") or ["part_of_speech"]
+
+    features = []
+    for f in show_features:
+        features.append(FeatureConfig(name=f, visibility=FeatureVisibility.show))
+    for f in request_features:
+        features.append(FeatureConfig(name=f, visibility=FeatureVisibility.request))
+
+    quiz = QuizDefinition(
+        title=args["title"],
+        description=args.get("description", ""),
+        corpus=args.get("corpus", "hebrew"),
+        book=args["book"],
+        chapter_start=args["chapter_start"],
+        chapter_end=chapter_end,
+        verse_start=args.get("verse_start"),
+        verse_end=args.get("verse_end"),
+        search_template=args["search_template"],
+        features=features,
+        randomize=args.get("randomize", True),
+        max_questions=args.get("max_questions", 10),
+    )
+
+    session = generate_session(quiz, engine)
+
+    return {
+        "quiz_definition": quiz.model_dump(),
+        "validation": {
+            "total_questions_generated": len(session.questions),
+            "sample_questions": [q.model_dump() for q in session.questions[:3]],
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Chat loop (shared by both modes)
+# ---------------------------------------------------------------------------
+
+
+def _chat_loop(
     engine: TFEngine,
     message: str,
-    history: list[dict[str, Any]] | None = None,
-    model: str = "gemini-2.5-flash-lite",
-    max_turns: int = 10,
+    history: list[dict[str, Any]] | None,
+    system_prompt: str,
+    tools: types.Tool,
+    model: str,
+    max_turns: int,
 ) -> dict[str, Any]:
     """Run a chat turn with tool use loop.
 
     Returns:
-        {"reply": str, "tool_calls": [{"name": str, "input": dict, "result": Any}, ...]}
+        {"reply": str, "tool_calls": [...]}
     """
-    client = genai.Client()  # reads GEMINI_API_KEY or GOOGLE_API_KEY from env
+    client = genai.Client()
 
     config = types.GenerateContentConfig(
-        system_instruction=SYSTEM_PROMPT,
-        tools=[TOOLS],
+        system_instruction=system_prompt,
+        tools=[tools],
     )
 
-    # Build conversation contents
     contents: list[types.Content] = []
     if history:
         for msg in history:
@@ -243,7 +357,6 @@ def chat(
 
         candidate = response.candidates[0]
 
-        # Check for function calls in response parts
         function_calls = [
             part.function_call
             for part in candidate.content.parts
@@ -251,17 +364,14 @@ def chat(
         ]
 
         if not function_calls:
-            # No tool use — extract text and return
             text_parts = [part.text for part in candidate.content.parts if part.text]
             return {
                 "reply": "\n".join(text_parts),
                 "tool_calls": tool_calls_log,
             }
 
-        # Append assistant response to conversation
         contents.append(candidate.content)
 
-        # Process each function call
         function_response_parts = []
         for fc in function_calls:
             args = dict(fc.args) if fc.args else {}
@@ -302,3 +412,34 @@ def chat(
         "reply": "I've reached the maximum number of tool calls. Please try a more specific question.",
         "tool_calls": tool_calls_log,
     }
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
+def chat(
+    engine: TFEngine,
+    message: str,
+    history: list[dict[str, Any]] | None = None,
+    model: str = "gemini-2.5-flash-lite",
+    max_turns: int = 10,
+) -> dict[str, Any]:
+    """General biblical text chat."""
+    return _chat_loop(
+        engine, message, history, SYSTEM_PROMPT, GENERAL_TOOLS, model, max_turns
+    )
+
+
+def chat_quiz(
+    engine: TFEngine,
+    message: str,
+    history: list[dict[str, Any]] | None = None,
+    model: str = "gemini-2.5-flash-lite",
+    max_turns: int = 10,
+) -> dict[str, Any]:
+    """Quiz-builder chat — has access to build_quiz tool."""
+    return _chat_loop(
+        engine, message, history, SYSTEM_PROMPT_QUIZ, QUIZ_TOOLS, model, max_turns
+    )

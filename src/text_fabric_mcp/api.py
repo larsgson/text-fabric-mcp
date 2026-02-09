@@ -166,6 +166,23 @@ def chat_endpoint(req: ChatRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/chat-quiz")
+def chat_quiz_endpoint(req: ChatRequest):
+    """AI-assisted quiz builder. Describe the quiz you want in natural language."""
+    if not (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")):
+        raise HTTPException(
+            status_code=503,
+            detail="Chat unavailable: GOOGLE_API_KEY not configured",
+        )
+    try:
+        from text_fabric_mcp.chat import chat_quiz
+
+        return chat_quiz(engine, req.message, req.history)
+    except Exception as e:
+        logger.error("Chat-quiz error: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/context")
 def get_context(
     book: str,

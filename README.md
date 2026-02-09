@@ -12,6 +12,7 @@ Biblical text analysis server powered by [Text-Fabric](https://annotation.github
 - **Vocabulary extraction** -- unique lexemes in a passage sorted by corpus frequency
 - **LLM chat** -- agentic conversation powered by Google Gemini that can call all the above tools (free tier available)
 - **Quiz generation** -- configurable quiz engine for Hebrew morphology drills
+- **AI-assisted quiz builder** -- teachers describe a quiz in natural language and the AI builds a validated quiz definition
 - **Dual interface** -- same engine exposed as MCP tools (for AI assistants) and as a FastAPI HTTP API (for web frontends)
 
 ## Quick Start
@@ -52,6 +53,7 @@ This starts the MCP (Model Context Protocol) server for use with Claude Desktop 
 | GET | `/api/vocabulary?book=Genesis&chapter=1` | Unique lexemes in a passage |
 | GET | `/api/context?book=Genesis&chapter=1&verse=1` | Syntactic hierarchy for a word |
 | POST | `/api/chat` | LLM-powered biblical analysis |
+| POST | `/api/chat-quiz` | AI-assisted quiz builder |
 | GET/POST | `/api/quizzes` | Quiz CRUD |
 | POST | `/api/quizzes/{id}/generate` | Generate a quiz session |
 
@@ -63,6 +65,7 @@ When running as an MCP server, the following tools are available to AI assistant
 - `get_passage`, `get_word_context` -- text retrieval
 - `search_words`, `search_constructions` -- linguistic search
 - `get_lexeme_info`, `get_vocabulary` -- vocabulary queries
+- `build_quiz` -- build and validate a quiz definition (returns JSON, no server-side storage)
 
 ## Project Structure
 
@@ -79,12 +82,33 @@ src/text_fabric_mcp/
     ├── passage.py
     ├── schema.py
     ├── search.py
-    └── vocab.py
+    ├── vocab.py
+    └── quiz.py
 tests/
 ├── test_api.py
 ├── test_tf_engine.py
 └── test_quiz.py
 ```
+
+## AI-Assisted Quiz Builder
+
+Teachers can create quizzes in two ways:
+
+### Via the REST API (for web frontends)
+
+`POST /api/chat-quiz` accepts a natural language description and returns a validated quiz definition:
+
+```json
+{
+  "message": "Create a quiz on qal perfect verbs in Genesis 1-3, showing the gloss and asking for verbal stem and tense"
+}
+```
+
+The AI explores the text, builds a `QuizDefinition`, validates it against Text-Fabric, and returns the definition with a preview. The frontend can then save it via `POST /api/quizzes`.
+
+### Via MCP (for AI assistants like Claude Desktop)
+
+The `build_quiz` tool lets an AI assistant build quiz definitions interactively. The teacher describes what they want, the AI explores passages with `search_words` and `get_passage`, then calls `build_quiz` to produce a validated definition. The result is returned as portable JSON -- nothing is stored on the server.
 
 ## Testing
 
@@ -100,7 +124,7 @@ Tests download Text-Fabric data on first run (cached in `~/text-fabric-data/`).
 |----------|----------|-------------|
 | `API_KEY` | Recommended | Shared secret for API authentication. All requests must include `x-api-key` header. If unset, all requests are allowed. |
 | `PORT` | No | API server port (default: 8000) |
-| `GOOGLE_API_KEY` | No | Enables the `/api/chat` endpoint. Free tier from [Google AI Studio](https://aistudio.google.com/apikey). |
+| `GOOGLE_API_KEY` | No | Enables the `/api/chat` and `/api/chat-quiz` endpoints. Free tier from [Google AI Studio](https://aistudio.google.com/apikey). |
 
 ## Deployment
 

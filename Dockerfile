@@ -6,8 +6,8 @@ COPY pyproject.toml ./
 COPY src/ ./src/
 RUN pip install --no-cache-dir .
 
-# Copy system prompt for chat
-COPY system_prompt.md ./
+# Copy system prompts for chat
+COPY system_prompt.md system_prompt_quiz.md ./
 
 # Single persistent volume at /data holds both Text-Fabric cache and quizzes.
 # Text-Fabric defaults to ~/text-fabric-data/ so we symlink it into /data.

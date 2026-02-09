@@ -7,7 +7,7 @@ import logging
 from mcp.server.fastmcp import FastMCP
 
 from text_fabric_mcp.tf_engine import TFEngine
-from text_fabric_mcp.tools import passage, schema, search, vocab
+from text_fabric_mcp.tools import passage, quiz, schema, search, vocab
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -31,6 +31,7 @@ passage.register(mcp, engine)
 schema.register(mcp, engine)
 search.register(mcp, engine)
 vocab.register(mcp, engine)
+quiz.register(mcp, engine)
 
 
 def main():
