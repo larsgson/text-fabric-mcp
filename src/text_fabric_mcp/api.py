@@ -152,6 +152,7 @@ def get_vocabulary(
 @app.post("/api/chat")
 def chat_endpoint(req: ChatRequest):
     """Send a message to the LLM with biblical text tools available."""
+    logger.info("Chat request received: %s", req.message[:100])
     if not (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")):
         raise HTTPException(
             status_code=503,
@@ -160,9 +161,12 @@ def chat_endpoint(req: ChatRequest):
     try:
         from text_fabric_mcp.chat import chat
 
-        return chat(engine, req.message, req.history)
+        logger.info("Calling chat...")
+        result = chat(engine, req.message, req.history)
+        logger.info("Chat completed successfully")
+        return result
     except Exception as e:
-        logger.error("Chat error: %s", e)
+        logger.error("Chat error: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
