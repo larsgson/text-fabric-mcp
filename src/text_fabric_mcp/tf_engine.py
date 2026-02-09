@@ -87,7 +87,7 @@ class TFEngine:
             logger.info(
                 "Loading %s from %s (HOME=%s) ...", display_name, org_repo, home
             )
-            api = use(org_repo, silent="deep")
+            api = use(org_repo, silent=True)
             # Verify the API initialized properly
             if not hasattr(api, "T") or not hasattr(api.F, "otype"):
                 raise RuntimeError(

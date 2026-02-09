@@ -1,25 +1,24 @@
 #!/bin/sh
 set -e
 
-MARKER="/data/text-fabric-data/.runtime-compiled"
+MARKER="/data/text-fabric-data/.cache-ok"
 
 # Ensure volume directories exist
 mkdir -p /data/text-fabric-data /data/quizzes
 
-# Copy pre-downloaded TF data to the volume if not already there.
-if [ ! -d "/data/text-fabric-data/github/ETCBC/bhsa/tf" ]; then
-    echo "Copying pre-downloaded Text-Fabric data to volume..."
-    cp -r /root/text-fabric-data/* /data/text-fabric-data/
-    echo "Done."
-fi
-
-# Remove pre-compiled binary caches that were built during Docker build
-# (HOME=/root). The pickled .tfx files contain environment-specific state
-# and must be recompiled at runtime (HOME=/data). A marker file tracks
-# whether the cache was already rebuilt in the runtime environment.
+# On first run (or after a new Docker image), wipe stale data from the
+# volume and copy the known-good pre-downloaded data from the image.
+# Remove compiled caches so TF recompiles them at runtime.
 if [ ! -f "$MARKER" ]; then
-    echo "Clearing build-time TF caches for runtime recompilation..."
+    echo "Provisioning Text-Fabric data from Docker image..."
+    rm -rf /data/text-fabric-data/github
+    cp -r /root/text-fabric-data/* /data/text-fabric-data/
+    echo "Removing build-time compiled caches..."
     find /data/text-fabric-data -type d -name ".tf" -exec rm -rf {} + 2>/dev/null || true
+    # Diagnostic: show what we have
+    echo "=== TF data on volume ==="
+    find /data/text-fabric-data -maxdepth 5 -type f | head -30
+    echo "=== end ==="
     touch "$MARKER"
     echo "TF will recompile binary caches on first load (~30-60s)."
 fi
