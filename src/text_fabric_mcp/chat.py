@@ -17,7 +17,10 @@ from text_fabric_mcp.tf_engine import TFEngine
 
 logger = logging.getLogger(__name__)
 
+# Look for system prompts: first relative to source (local dev), then in /app (Docker)
 _PROMPTS_DIR = Path(__file__).parent.parent.parent
+if not (_PROMPTS_DIR / "system_prompt.md").exists():
+    _PROMPTS_DIR = Path("/app")
 SYSTEM_PROMPT = (_PROMPTS_DIR / "system_prompt.md").read_text()
 SYSTEM_PROMPT_QUIZ = (_PROMPTS_DIR / "system_prompt_quiz.md").read_text()
 
