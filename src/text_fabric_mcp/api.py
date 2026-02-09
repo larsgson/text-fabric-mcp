@@ -250,7 +250,13 @@ if not (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")):
 
 def main():
     """Run the API server."""
+    from pathlib import Path
+
     import uvicorn
+
+    # Ensure volume subdirectories exist (Railway mounts an empty volume)
+    for d in ["/data/text-fabric-data", "/data/quizzes"]:
+        Path(d).mkdir(parents=True, exist_ok=True)
 
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)

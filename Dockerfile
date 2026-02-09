@@ -12,8 +12,9 @@ COPY system_prompt.md system_prompt_quiz.md ./
 # Single persistent volume at /data holds both Text-Fabric cache and quizzes.
 # Text-Fabric defaults to ~/text-fabric-data/ so we symlink it into /data.
 # Quiz storage is pointed here via QUIZ_DIR env var.
-RUN mkdir -p /data/text-fabric-data /data/quizzes \
-    && ln -s /data/text-fabric-data /root/text-fabric-data
+# The volume is mounted at /data at runtime; subdirectories are created on startup.
+# The symlink lets Text-Fabric find its cache at ~/text-fabric-data -> /data/text-fabric-data.
+RUN ln -s /data/text-fabric-data /root/text-fabric-data
 
 ENV QUIZ_DIR=/data/quizzes
 

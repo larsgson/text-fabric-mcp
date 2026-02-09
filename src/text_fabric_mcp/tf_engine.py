@@ -84,6 +84,13 @@ class TFEngine:
             org_repo, display_name = CORPORA[corpus]
             logger.info("Loading %s from %s ...", display_name, org_repo)
             api = use(org_repo, silent="deep")
+            # Verify the API initialized properly (silent='deep' hides errors)
+            if not hasattr(api, "T") or not hasattr(api.F, "otype"):
+                raise RuntimeError(
+                    f"Failed to load corpus '{corpus}' from {org_repo}. "
+                    "Text-Fabric data may not have downloaded correctly. "
+                    "Check network access and disk space."
+                )
             self._apis[corpus] = api
             self._loaded[corpus] = True
             logger.info("Loaded %s", display_name)
