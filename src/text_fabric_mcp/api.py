@@ -255,27 +255,25 @@ def main():
 
     import uvicorn
 
-    # Ensure volume subdirectories exist (Railway mounts an empty volume)
-    for d in ["/data/text-fabric-data", "/data/quizzes"]:
-        Path(d).mkdir(parents=True, exist_ok=True)
+    # Railway/Docker: ensure volume subdirectories exist and clean corrupted caches.
+    # Skipped on local dev where /data doesn't exist.
+    if Path("/data").exists():
+        for d in ["/data/text-fabric-data", "/data/quizzes"]:
+            Path(d).mkdir(parents=True, exist_ok=True)
 
-    # Check for corrupted Text-Fabric cache and clean it up.
-    # If a previous download was interrupted, the 'otext' warp feature
-    # will be missing and TF will fail silently. Delete and re-download.
-    for corpus_path in ["ETCBC/bhsa", "ETCBC/nestle1904"]:
-        tf_dir = Path("/data/text-fabric-data/github") / corpus_path / "tf"
-        if tf_dir.exists():
-            # Look for otext.tf in any version subdirectory
-            otext_files = list(tf_dir.glob("*/otext.tf"))
-            if not otext_files:
-                corpus_dir = Path("/data/text-fabric-data/github") / corpus_path
-                logger.warning(
-                    "Corrupted TF cache detected for %s (missing otext). "
-                    "Deleting %s for clean re-download.",
-                    corpus_path,
-                    corpus_dir,
-                )
-                shutil.rmtree(corpus_dir, ignore_errors=True)
+        for corpus_path in ["ETCBC/bhsa", "ETCBC/nestle1904"]:
+            tf_dir = Path("/data/text-fabric-data/github") / corpus_path / "tf"
+            if tf_dir.exists():
+                otext_files = list(tf_dir.glob("*/otext.tf"))
+                if not otext_files:
+                    corpus_dir = Path("/data/text-fabric-data/github") / corpus_path
+                    logger.warning(
+                        "Corrupted TF cache detected for %s (missing otext). "
+                        "Deleting %s for clean re-download.",
+                        corpus_path,
+                        corpus_dir,
+                    )
+                    shutil.rmtree(corpus_dir, ignore_errors=True)
 
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
