@@ -98,6 +98,7 @@ Tests download Text-Fabric data on first run (cached in `~/text-fabric-data/`).
 
 | Variable | Required | Description |
 |----------|----------|-------------|
+| `API_KEY` | Recommended | Shared secret for API authentication. All requests must include `x-api-key` header. If unset, all requests are allowed. |
 | `PORT` | No | API server port (default: 8000) |
 | `ANTHROPIC_API_KEY` | No | Enables the `/api/chat` endpoint |
 

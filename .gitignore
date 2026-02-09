@@ -29,7 +29,7 @@ venv/
 # Quiz storage
 quizzes/
 
-# Frontend (separate repo: hebrew-quizz)
+# Frontend (separate repo)
 frontend/
 frontend_v1/
 frontend_v2/

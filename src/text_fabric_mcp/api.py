@@ -1,11 +1,13 @@
-"""FastAPI HTTP layer wrapping TFEngine for the hebrew-quizz frontend."""
+"""FastAPI HTTP layer wrapping TFEngine."""
 
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from text_fabric_mcp.quiz_engine import QuizStore, generate_session
@@ -20,6 +22,26 @@ app = FastAPI(
     description="Biblical text analysis API powered by Text-Fabric",
     version="0.1.0",
 )
+
+API_KEY = os.getenv("API_KEY")
+if not API_KEY:
+    logger.warning("API_KEY not set. All requests will be allowed.")
+
+
+@app.middleware("http")
+async def verify_api_key(request: Request, call_next):
+    if API_KEY and request.url.path != "/health":
+        key = request.headers.get("x-api-key", "")
+        if not hmac.compare_digest(key, API_KEY):
+            return JSONResponse(status_code=401, content={"detail": "Invalid API key"})
+    return await call_next(request)
+
+
+@app.get("/health")
+def health():
+    """Unauthenticated health check for Railway/Fly.io."""
+    return {"status": "ok"}
+
 
 engine = TFEngine()
 quiz_store = QuizStore()
