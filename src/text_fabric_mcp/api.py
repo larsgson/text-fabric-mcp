@@ -152,7 +152,6 @@ def get_vocabulary(
 @app.post("/api/chat")
 def chat_endpoint(req: ChatRequest):
     """Send a message to the LLM with biblical text tools available."""
-    logger.info("Chat request received: %s", req.message[:100])
     if not (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")):
         raise HTTPException(
             status_code=503,
@@ -161,12 +160,9 @@ def chat_endpoint(req: ChatRequest):
     try:
         from text_fabric_mcp.chat import chat
 
-        logger.info("Calling chat...")
-        result = chat(engine, req.message, req.history)
-        logger.info("Chat completed successfully")
-        return result
+        return chat(engine, req.message, req.history)
     except Exception as e:
-        logger.error("Chat error: %s", e, exc_info=True)
+        logger.error("Chat error: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -275,14 +271,6 @@ def _provision_tf_data():
     src = Path("/root/text-fabric-data")
     dst = data_dir / "text-fabric-data"
 
-    logger.info(
-        "TF provision check: marker=%s exists=%s, src=%s exists=%s",
-        marker,
-        marker.exists(),
-        src,
-        src.exists(),
-    )
-
     if not marker.exists() and src.exists():
         logger.info("Provisioning Text-Fabric data from Docker image...")
         # Wipe stale data and copy fresh from image
@@ -296,34 +284,13 @@ def _provision_tf_data():
         # won't load correctly at runtime (HOME=/data).
         for tf_cache in dst.rglob(".tf"):
             if tf_cache.is_dir():
-                logger.info("  Removing compiled cache: %s", tf_cache)
                 shutil.rmtree(tf_cache)
 
-        # Log what's available
-        for corpus_path in ["ETCBC/bhsa", "ETCBC/nestle1904"]:
-            tf_dir = dst / "github" / corpus_path / "tf"
-            if tf_dir.exists():
-                tf_files = list(tf_dir.rglob("*.tf"))
-                logger.info("  %s: %d .tf source files", corpus_path, len(tf_files))
-            else:
-                logger.warning("  %s: tf/ directory MISSING", corpus_path)
-
-        # Remove old markers
-        for old in dst.glob(".cache-*"):
-            old.unlink(missing_ok=True)
-        for old in dst.glob(".runtime-*"):
-            old.unlink(missing_ok=True)
-
         marker.touch()
-        logger.info(
-            "TF data provisioned. Binary caches will be compiled on first load."
-        )
-    elif marker.exists():
-        logger.info("TF data already provisioned (marker exists).")
-    elif not src.exists():
+        logger.info("TF data provisioned. Caches will be compiled on first load.")
+    elif not src.exists() and not marker.exists():
         logger.warning(
-            "No pre-downloaded TF data at %s. TF will attempt to download at runtime.",
-            src,
+            "No pre-downloaded TF data found. TF will attempt runtime download."
         )
 
 

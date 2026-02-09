@@ -426,7 +426,7 @@ def chat(
     engine: TFEngine,
     message: str,
     history: list[dict[str, Any]] | None = None,
-    model: str = "gemini-2.5-flash-lite",
+    model: str = "gemini-2.5-flash",
     max_turns: int = 10,
 ) -> dict[str, Any]:
     """General biblical text chat."""
@@ -439,7 +439,7 @@ def chat_quiz(
     engine: TFEngine,
     message: str,
     history: list[dict[str, Any]] | None = None,
-    model: str = "gemini-2.5-flash-lite",
+    model: str = "gemini-2.5-flash",
     max_turns: int = 10,
 ) -> dict[str, Any]:
     """Quiz-builder chat — has access to build_quiz tool."""
