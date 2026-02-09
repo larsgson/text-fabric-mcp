@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 from tf.app import use
@@ -82,12 +83,16 @@ class TFEngine:
             )
         if corpus not in self._apis:
             org_repo, display_name = CORPORA[corpus]
-            logger.info("Loading %s from %s ...", display_name, org_repo)
-            api = use(org_repo, silent="deep")
-            # Verify the API initialized properly (silent='deep' hides errors)
+            home = os.environ.get("HOME", "~")
+            logger.info(
+                "Loading %s from %s (HOME=%s) ...", display_name, org_repo, home
+            )
+            api = use(org_repo, silent=False)
+            # Verify the API initialized properly
             if not hasattr(api, "T") or not hasattr(api.F, "otype"):
                 raise RuntimeError(
                     f"Failed to load corpus '{corpus}' from {org_repo}. "
+                    f"HOME={home}. "
                     "Text-Fabric data may not have downloaded correctly. "
                     "Check network access and disk space."
                 )
