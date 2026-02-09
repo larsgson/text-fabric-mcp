@@ -152,10 +152,10 @@ def get_vocabulary(
 @app.post("/api/chat")
 def chat_endpoint(req: ChatRequest):
     """Send a message to the LLM with biblical text tools available."""
-    if not os.getenv("ANTHROPIC_API_KEY"):
+    if not (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")):
         raise HTTPException(
             status_code=503,
-            detail="Chat unavailable: ANTHROPIC_API_KEY not configured",
+            detail="Chat unavailable: GOOGLE_API_KEY not configured",
         )
     try:
         from text_fabric_mcp.chat import chat
@@ -227,8 +227,8 @@ def generate_quiz_session(quiz_id: str):
     return session.model_dump()
 
 
-if not os.getenv("ANTHROPIC_API_KEY"):
-    logger.warning("ANTHROPIC_API_KEY not set. Chat endpoint will be unavailable.")
+if not (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")):
+    logger.warning("GOOGLE_API_KEY not set. Chat endpoint will be unavailable.")
 
 
 def main():

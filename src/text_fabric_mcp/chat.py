@@ -1,4 +1,4 @@
-"""LLM chat backend — calls Anthropic API with TFEngine tools in an agentic loop."""
+"""LLM chat backend — calls Google Gemini API with TFEngine tools in an agentic loop."""
 
 from __future__ import annotations
 
@@ -8,7 +8,8 @@ import os
 from pathlib import Path
 from typing import Any
 
-import anthropic
+from google import genai
+from google.genai import types
 
 from text_fabric_mcp.tf_engine import TFEngine
 
@@ -16,20 +17,23 @@ logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = (Path(__file__).parent.parent.parent / "system_prompt.md").read_text()
 
-# Tool definitions for the Anthropic API — mirror the MCP tools
-TOOL_DEFINITIONS: list[dict[str, Any]] = [
+# Tool declarations for the Gemini API — mirror the MCP tools
+TOOL_DECLARATIONS = [
     {
         "name": "list_corpora",
         "description": "List available corpora.",
-        "input_schema": {"type": "object", "properties": {}, "required": []},
+        "parameters": {"type": "object", "properties": {}, "required": []},
     },
     {
         "name": "list_books",
         "description": "List books with chapter counts for a corpus.",
-        "input_schema": {
+        "parameters": {
             "type": "object",
             "properties": {
-                "corpus": {"type": "string", "default": "hebrew"},
+                "corpus": {
+                    "type": "string",
+                    "description": "Corpus name (hebrew or greek)",
+                },
             },
             "required": [],
         },
@@ -37,14 +41,14 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": "get_passage",
         "description": "Get biblical text for a verse range with full morphological annotations.",
-        "input_schema": {
+        "parameters": {
             "type": "object",
             "properties": {
-                "book": {"type": "string"},
-                "chapter": {"type": "integer"},
-                "verse_start": {"type": "integer", "default": 1},
-                "verse_end": {"type": "integer"},
-                "corpus": {"type": "string", "default": "hebrew"},
+                "book": {"type": "string", "description": "Book name"},
+                "chapter": {"type": "integer", "description": "Chapter number"},
+                "verse_start": {"type": "integer", "description": "Start verse"},
+                "verse_end": {"type": "integer", "description": "End verse"},
+                "corpus": {"type": "string", "description": "Corpus name"},
             },
             "required": ["book", "chapter"],
         },
@@ -52,10 +56,10 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": "get_schema",
         "description": "Return object types and their features for a corpus.",
-        "input_schema": {
+        "parameters": {
             "type": "object",
             "properties": {
-                "corpus": {"type": "string", "default": "hebrew"},
+                "corpus": {"type": "string", "description": "Corpus name"},
             },
             "required": [],
         },
@@ -63,17 +67,18 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": "search_words",
         "description": "Search for words matching morphological feature constraints.",
-        "input_schema": {
+        "parameters": {
             "type": "object",
             "properties": {
-                "corpus": {"type": "string", "default": "hebrew"},
-                "book": {"type": "string"},
-                "chapter": {"type": "integer"},
+                "corpus": {"type": "string", "description": "Corpus name"},
+                "book": {"type": "string", "description": "Book name"},
+                "chapter": {"type": "integer", "description": "Chapter number"},
                 "features": {
                     "type": "object",
-                    "additionalProperties": {"type": "string"},
+                    "description": "Feature name/value pairs",
+                    "properties": {},
                 },
-                "limit": {"type": "integer", "default": 100},
+                "limit": {"type": "integer", "description": "Max results"},
             },
             "required": [],
         },
@@ -81,12 +86,12 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": "search_constructions",
         "description": "Search for structural/syntactic patterns using Text-Fabric search templates.",
-        "input_schema": {
+        "parameters": {
             "type": "object",
             "properties": {
-                "template": {"type": "string"},
-                "corpus": {"type": "string", "default": "hebrew"},
-                "limit": {"type": "integer", "default": 50},
+                "template": {"type": "string", "description": "Search template"},
+                "corpus": {"type": "string", "description": "Corpus name"},
+                "limit": {"type": "integer", "description": "Max results"},
             },
             "required": ["template"],
         },
@@ -94,12 +99,12 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": "get_lexeme_info",
         "description": "Look up a lexeme and return its gloss, part of speech, and occurrences.",
-        "input_schema": {
+        "parameters": {
             "type": "object",
             "properties": {
-                "lexeme": {"type": "string"},
-                "corpus": {"type": "string", "default": "hebrew"},
-                "limit": {"type": "integer", "default": 50},
+                "lexeme": {"type": "string", "description": "Lexeme identifier"},
+                "corpus": {"type": "string", "description": "Corpus name"},
+                "limit": {"type": "integer", "description": "Max occurrences"},
             },
             "required": ["lexeme"],
         },
@@ -107,14 +112,14 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": "get_vocabulary",
         "description": "Get unique lexemes in a passage with frequency and gloss.",
-        "input_schema": {
+        "parameters": {
             "type": "object",
             "properties": {
-                "book": {"type": "string"},
-                "chapter": {"type": "integer"},
-                "verse_start": {"type": "integer", "default": 1},
-                "verse_end": {"type": "integer"},
-                "corpus": {"type": "string", "default": "hebrew"},
+                "book": {"type": "string", "description": "Book name"},
+                "chapter": {"type": "integer", "description": "Chapter number"},
+                "verse_start": {"type": "integer", "description": "Start verse"},
+                "verse_end": {"type": "integer", "description": "End verse"},
+                "corpus": {"type": "string", "description": "Corpus name"},
             },
             "required": ["book", "chapter"],
         },
@@ -122,19 +127,21 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": "get_word_context",
         "description": "Get the linguistic hierarchy (phrase, clause, sentence) for a specific word.",
-        "input_schema": {
+        "parameters": {
             "type": "object",
             "properties": {
-                "book": {"type": "string"},
-                "chapter": {"type": "integer"},
-                "verse": {"type": "integer"},
-                "word_index": {"type": "integer", "default": 0},
-                "corpus": {"type": "string", "default": "hebrew"},
+                "book": {"type": "string", "description": "Book name"},
+                "chapter": {"type": "integer", "description": "Chapter number"},
+                "verse": {"type": "integer", "description": "Verse number"},
+                "word_index": {"type": "integer", "description": "Word index in verse"},
+                "corpus": {"type": "string", "description": "Corpus name"},
             },
             "required": ["book", "chapter", "verse"],
         },
     },
 ]
+
+TOOLS = types.Tool(function_declarations=TOOL_DECLARATIONS)
 
 
 def _execute_tool(engine: TFEngine, name: str, args: dict[str, Any]) -> Any:
@@ -200,7 +207,7 @@ def chat(
     engine: TFEngine,
     message: str,
     history: list[dict[str, Any]] | None = None,
-    model: str = "claude-sonnet-4-20250514",
+    model: str = "gemini-2.5-flash-lite",
     max_turns: int = 10,
 ) -> dict[str, Any]:
     """Run a chat turn with tool use loop.
@@ -208,76 +215,89 @@ def chat(
     Returns:
         {"reply": str, "tool_calls": [{"name": str, "input": dict, "result": Any}, ...]}
     """
-    client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
+    client = genai.Client()  # reads GEMINI_API_KEY or GOOGLE_API_KEY from env
 
-    messages: list[dict[str, Any]] = []
+    config = types.GenerateContentConfig(
+        system_instruction=SYSTEM_PROMPT,
+        tools=[TOOLS],
+    )
+
+    # Build conversation contents
+    contents: list[types.Content] = []
     if history:
-        messages.extend(history)
-    messages.append({"role": "user", "content": message})
+        for msg in history:
+            role = "model" if msg["role"] == "assistant" else "user"
+            contents.append(
+                types.Content(role=role, parts=[types.Part(text=msg["content"])])
+            )
+    contents.append(types.Content(role="user", parts=[types.Part(text=message)]))
 
     tool_calls_log: list[dict[str, Any]] = []
 
     for _ in range(max_turns):
-        response = client.messages.create(
+        response = client.models.generate_content(
             model=model,
-            max_tokens=4096,
-            system=SYSTEM_PROMPT,
-            tools=TOOL_DEFINITIONS,
-            messages=messages,
+            contents=contents,
+            config=config,
         )
 
-        # If no tool use, we're done
-        if response.stop_reason != "tool_use":
-            # Extract text from response
-            text_parts = [
-                block.text for block in response.content if block.type == "text"
-            ]
+        candidate = response.candidates[0]
+
+        # Check for function calls in response parts
+        function_calls = [
+            part.function_call
+            for part in candidate.content.parts
+            if part.function_call is not None
+        ]
+
+        if not function_calls:
+            # No tool use — extract text and return
+            text_parts = [part.text for part in candidate.content.parts if part.text]
             return {
                 "reply": "\n".join(text_parts),
                 "tool_calls": tool_calls_log,
             }
 
-        # Process tool calls
-        assistant_content = response.content
-        messages.append({"role": "assistant", "content": assistant_content})
+        # Append assistant response to conversation
+        contents.append(candidate.content)
 
-        tool_results = []
-        for block in assistant_content:
-            if block.type != "tool_use":
-                continue
+        # Process each function call
+        function_response_parts = []
+        for fc in function_calls:
+            args = dict(fc.args) if fc.args else {}
+            logger.info("Tool call: %s(%s)", fc.name, json.dumps(args)[:200])
 
-            logger.info("Tool call: %s(%s)", block.name, json.dumps(block.input)[:200])
             try:
-                result = _execute_tool(engine, block.name, block.input)
+                result = _execute_tool(engine, fc.name, args)
                 result_str = json.dumps(result, ensure_ascii=False, default=str)
-                # Truncate very large results to stay within context
                 if len(result_str) > 20000:
                     result_str = result_str[:20000] + "... (truncated)"
+                result_data = (
+                    json.loads(result_str)
+                    if not result_str.endswith("(truncated)")
+                    else result_str
+                )
             except Exception as e:
                 logger.error("Tool error: %s", e)
-                result_str = json.dumps({"error": str(e)})
+                result_data = {"error": str(e)}
 
             tool_calls_log.append(
                 {
-                    "name": block.name,
-                    "input": block.input,
-                    "result": json.loads(result_str)
-                    if not result_str.endswith("(truncated)")
-                    else result_str,
+                    "name": fc.name,
+                    "input": args,
+                    "result": result_data,
                 }
             )
 
-            tool_results.append(
-                {
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": result_str,
-                }
+            function_response_parts.append(
+                types.Part.from_function_response(
+                    name=fc.name,
+                    response={"result": result_data},
+                )
             )
 
-        messages.append({"role": "user", "content": tool_results})
+        contents.append(types.Content(role="user", parts=function_response_parts))
 
-    # Exhausted max turns
     return {
         "reply": "I've reached the maximum number of tool calls. Please try a more specific question.",
         "tool_calls": tool_calls_log,

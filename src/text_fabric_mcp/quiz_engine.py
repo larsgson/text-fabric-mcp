@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import random
 from pathlib import Path
 from typing import Any
@@ -18,8 +19,10 @@ from text_fabric_mcp.tf_engine import WORD_FEATURES, WORD_TYPE, TFEngine
 
 logger = logging.getLogger(__name__)
 
-# Default quiz storage directory
-QUIZ_DIR = Path(__file__).parent.parent.parent / "quizzes"
+# Default quiz storage directory (override with QUIZ_DIR env var)
+QUIZ_DIR = Path(
+    os.environ.get("QUIZ_DIR", Path(__file__).parent.parent.parent / "quizzes")
+)
 
 
 class QuizStore:

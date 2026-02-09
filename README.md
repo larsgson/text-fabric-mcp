@@ -10,7 +10,7 @@ Biblical text analysis server powered by [Text-Fabric](https://annotation.github
 - **Morphological search** -- find words by part of speech, verbal stem, tense, gender, number, person, state, and more
 - **Structural search** -- find syntactic patterns (clauses, phrases) using Text-Fabric search templates
 - **Vocabulary extraction** -- unique lexemes in a passage sorted by corpus frequency
-- **LLM chat** -- agentic conversation with Claude that can call all the above tools (requires Anthropic API key)
+- **LLM chat** -- agentic conversation powered by Google Gemini that can call all the above tools (free tier available)
 - **Quiz generation** -- configurable quiz engine for Hebrew morphology drills
 - **Dual interface** -- same engine exposed as MCP tools (for AI assistants) and as a FastAPI HTTP API (for web frontends)
 
@@ -71,7 +71,7 @@ src/text_fabric_mcp/
 ├── server.py          # MCP server entry point
 ├── api.py             # FastAPI HTTP layer
 ├── tf_engine.py       # Text-Fabric data access
-├── chat.py            # Anthropic LLM integration
+├── chat.py            # Google Gemini LLM integration
 ├── models.py          # Pydantic data models
 ├── quiz_engine.py     # Quiz generation engine
 ├── quiz_models.py     # Quiz data models
@@ -100,7 +100,7 @@ Tests download Text-Fabric data on first run (cached in `~/text-fabric-data/`).
 |----------|----------|-------------|
 | `API_KEY` | Recommended | Shared secret for API authentication. All requests must include `x-api-key` header. If unset, all requests are allowed. |
 | `PORT` | No | API server port (default: 8000) |
-| `ANTHROPIC_API_KEY` | No | Enables the `/api/chat` endpoint |
+| `GOOGLE_API_KEY` | No | Enables the `/api/chat` endpoint. Free tier from [Google AI Studio](https://aistudio.google.com/apikey). |
 
 ## Deployment
 

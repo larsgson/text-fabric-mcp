@@ -9,12 +9,13 @@ RUN pip install --no-cache-dir .
 # Copy system prompt for chat
 COPY system_prompt.md ./
 
-# Create quizzes directory (mount as volume for persistence)
-RUN mkdir -p /app/quizzes
+# Single persistent volume at /data holds both Text-Fabric cache and quizzes.
+# Text-Fabric defaults to ~/text-fabric-data/ so we symlink it into /data.
+# Quiz storage is pointed here via QUIZ_DIR env var.
+RUN mkdir -p /data/text-fabric-data /data/quizzes \
+    && ln -s /data/text-fabric-data /root/text-fabric-data
 
-# Text-Fabric stores data in ~/text-fabric-data/ (hardcoded to $HOME).
-# In Docker, HOME=/root, so the cache lives at /root/text-fabric-data/.
-# Mount a volume there to persist across deploys and avoid re-downloading.
+ENV QUIZ_DIR=/data/quizzes
 
 EXPOSE 8000
 
