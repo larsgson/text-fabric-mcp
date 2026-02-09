@@ -87,9 +87,15 @@ class TFEngine:
             logger.info(
                 "Loading %s from %s (HOME=%s) ...", display_name, org_repo, home
             )
-            api = use(org_repo, silent=True)
-            # Verify the API initialized properly
-            if not hasattr(api, "T") or not hasattr(api.F, "otype"):
+            api = use(org_repo, checkout="local", silent="deep")
+            # Verify the API initialized properly.
+            # use() returns a TfApp; the actual API is on .api.
+            inner = getattr(api, "api", None)
+            if (
+                inner is None
+                or not hasattr(inner, "T")
+                or not hasattr(inner.F, "otype")
+            ):
                 raise RuntimeError(
                     f"Failed to load corpus '{corpus}' from {org_repo}. "
                     f"HOME={home}. "
