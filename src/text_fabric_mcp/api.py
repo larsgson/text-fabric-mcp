@@ -248,32 +248,70 @@ if not (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")):
     logger.warning("GOOGLE_API_KEY not set. Chat endpoint will be unavailable.")
 
 
-def main():
-    """Run the API server."""
+def _provision_tf_data():
+    """Copy pre-downloaded TF data from Docker image to the persistent volume.
+
+    During Docker build, TF data is downloaded to /root/text-fabric-data/.
+    At runtime on Railway, the volume is mounted at /data and HOME=/data.
+    This function copies the raw .tf source files (excluding compiled caches)
+    so that Text-Fabric recompiles them in the runtime environment.
+    """
     import shutil
     from pathlib import Path
 
+    data_dir = Path("/data")
+    if not data_dir.exists():
+        return  # Local dev — no volume
+
+    marker = data_dir / "text-fabric-data" / ".cache-ok"
+    for d in ["/data/text-fabric-data", "/data/quizzes"]:
+        Path(d).mkdir(parents=True, exist_ok=True)
+
+    src = Path("/root/text-fabric-data")
+    dst = data_dir / "text-fabric-data"
+
+    if not marker.exists() and src.exists():
+        logger.info("Provisioning Text-Fabric data from Docker image...")
+        # Wipe stale data and copy fresh from image
+        github_dst = dst / "github"
+        if github_dst.exists():
+            shutil.rmtree(github_dst)
+        shutil.copytree(src, dst, dirs_exist_ok=True)
+
+        # Remove build-time compiled caches (.tf/N/ dirs with .tfx files).
+        # These are gzipped pickles from the build env (HOME=/root) and
+        # won't load correctly at runtime (HOME=/data).
+        for tf_cache in dst.rglob(".tf"):
+            if tf_cache.is_dir():
+                logger.info("  Removing compiled cache: %s", tf_cache)
+                shutil.rmtree(tf_cache)
+
+        # Diagnostic: log what's available
+        for corpus_path in ["ETCBC/bhsa", "ETCBC/nestle1904"]:
+            tf_dir = dst / "github" / corpus_path / "tf"
+            if tf_dir.exists():
+                tf_files = list(tf_dir.rglob("*.tf"))
+                logger.info("  %s: %d .tf source files", corpus_path, len(tf_files))
+            else:
+                logger.warning("  %s: tf/ directory MISSING", corpus_path)
+
+        marker.touch()
+        logger.info(
+            "TF data provisioned. Binary caches will be compiled on first load."
+        )
+    elif not src.exists() and not marker.exists():
+        logger.warning(
+            "No pre-downloaded TF data at %s and no cached data. "
+            "TF will attempt to download at runtime.",
+            src,
+        )
+
+
+def main():
+    """Run the API server."""
     import uvicorn
 
-    # Railway/Docker: ensure volume subdirectories exist and clean corrupted caches.
-    # Skipped on local dev where /data doesn't exist.
-    if Path("/data").exists():
-        for d in ["/data/text-fabric-data", "/data/quizzes"]:
-            Path(d).mkdir(parents=True, exist_ok=True)
-
-        for corpus_path in ["ETCBC/bhsa", "ETCBC/nestle1904"]:
-            tf_dir = Path("/data/text-fabric-data/github") / corpus_path / "tf"
-            if tf_dir.exists():
-                otext_files = list(tf_dir.glob("*/otext.tf"))
-                if not otext_files:
-                    corpus_dir = Path("/data/text-fabric-data/github") / corpus_path
-                    logger.warning(
-                        "Corrupted TF cache detected for %s (missing otext). "
-                        "Deleting %s for clean re-download.",
-                        corpus_path,
-                        corpus_dir,
-                    )
-                    shutil.rmtree(corpus_dir, ignore_errors=True)
+    _provision_tf_data()
 
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
