@@ -1,4 +1,4 @@
-"""LLM chat backend — calls Google Gemini API with TFEngine tools in an agentic loop."""
+"""LLM chat backend — calls Google Gemini API with CFEngine tools in an agentic loop."""
 
 from __future__ import annotations
 
@@ -11,9 +11,9 @@ from typing import Any
 from google import genai
 from google.genai import types
 
+from text_fabric_mcp.cf_engine import CFEngine
 from text_fabric_mcp.quiz_engine import generate_session
 from text_fabric_mcp.quiz_models import FeatureConfig, FeatureVisibility, QuizDefinition
-from text_fabric_mcp.tf_engine import TFEngine
 
 logger = logging.getLogger(__name__)
 
@@ -215,8 +215,8 @@ QUIZ_TOOLS = types.Tool(function_declarations=_EXPLORATION_TOOLS + [_BUILD_QUIZ_
 # ---------------------------------------------------------------------------
 
 
-def _execute_tool(engine: TFEngine, name: str, args: dict[str, Any]) -> Any:
-    """Execute a tool call against the TFEngine and return the result."""
+def _execute_tool(engine: CFEngine, name: str, args: dict[str, Any]) -> Any:
+    """Execute a tool call against the CFEngine and return the result."""
     if name == "list_corpora":
         return engine.list_corpora()
     elif name == "list_books":
@@ -276,7 +276,7 @@ def _execute_tool(engine: TFEngine, name: str, args: dict[str, Any]) -> Any:
         return {"error": f"Unknown tool: {name}"}
 
 
-def _execute_build_quiz(engine: TFEngine, args: dict[str, Any]) -> Any:
+def _execute_build_quiz(engine: CFEngine, args: dict[str, Any]) -> Any:
     """Build and validate a quiz definition."""
     chapter_end = args.get("chapter_end") or args["chapter_start"]
     show_features = args.get("show_features") or ["gloss"]
@@ -320,7 +320,7 @@ def _execute_build_quiz(engine: TFEngine, args: dict[str, Any]) -> Any:
 
 
 def _chat_loop(
-    engine: TFEngine,
+    engine: CFEngine,
     message: str,
     history: list[dict[str, Any]] | None,
     system_prompt: str,
@@ -423,7 +423,7 @@ def _chat_loop(
 
 
 def chat(
-    engine: TFEngine,
+    engine: CFEngine,
     message: str,
     history: list[dict[str, Any]] | None = None,
     model: str = "gemini-2.5-flash",
@@ -436,7 +436,7 @@ def chat(
 
 
 def chat_quiz(
-    engine: TFEngine,
+    engine: CFEngine,
     message: str,
     history: list[dict[str, Any]] | None = None,
     model: str = "gemini-2.5-flash",

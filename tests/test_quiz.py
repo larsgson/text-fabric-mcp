@@ -8,18 +8,18 @@ import pytest
 from fastapi.testclient import TestClient
 
 from text_fabric_mcp.api import app
+from text_fabric_mcp.cf_engine import CFEngine
 from text_fabric_mcp.quiz_engine import QuizStore, generate_session
 from text_fabric_mcp.quiz_models import (
     FeatureConfig,
     FeatureVisibility,
     QuizDefinition,
 )
-from text_fabric_mcp.tf_engine import TFEngine
 
 
 @pytest.fixture(scope="module")
 def engine():
-    return TFEngine()
+    return CFEngine()
 
 
 @pytest.fixture

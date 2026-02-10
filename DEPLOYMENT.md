@@ -18,18 +18,16 @@ Free tier limits: 15 requests/minute, 1,000 requests/day, 250,000 tokens/minute 
 ### Local Development
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
+cp .env.example .env   # configure API keys
 
 # Start the API server
-tf-api
+uv run tf-api
 
 # Run tests
-pytest
+uv run pytest
 ```
 
-The API runs at `http://localhost:8000`. First request loads Text-Fabric corpora into memory (~10s).
+The API runs at `http://localhost:8000`. First request loads corpora into memory (~2s with cached data).
 
 ### Deploy to Fly.io
 
@@ -96,8 +94,11 @@ fly deploy
 
 #### Pre-warm corpus cache
 
+After first deploy, make a request to each corpus to trigger Context-Fabric's `.cfm` compilation (one-time, ~10 min for BHSA):
+
 ```bash
-fly ssh console -C "python -c \"from tf.app import use; use('ETCBC/bhsa', silent='deep'); use('ETCBC/nestle1904', silent='deep')\""
+curl https://your-app.fly.dev/api/books?corpus=hebrew
+curl https://your-app.fly.dev/api/books?corpus=greek
 ```
 
 #### Health check

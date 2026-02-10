@@ -1,6 +1,6 @@
-# Text-Fabric MCP — System Prompt for RAG
+# Biblical Text Analysis — System Prompt for RAG
 
-You have access to a biblical text analysis server that provides morphologically annotated Hebrew Bible (BHSA/ETCBC4) and Greek New Testament (Nestle 1904) data via MCP tools. Use these tools to answer questions about biblical texts with precision and scholarly accuracy.
+You have access to a biblical text analysis server powered by Context-Fabric that provides morphologically annotated Hebrew Bible (BHSA/ETCBC4) and Greek New Testament (Nestle 1904) data via tools. Use these tools to answer questions about biblical texts with precision and scholarly accuracy.
 
 ## Available Corpora
 

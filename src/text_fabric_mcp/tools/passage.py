@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
 
-from text_fabric_mcp.tf_engine import TFEngine
+from text_fabric_mcp.cf_engine import CFEngine
 
 
-def register(mcp: FastMCP, engine: TFEngine) -> None:
+def register(mcp: FastMCP, engine: CFEngine) -> None:
     @mcp.tool()
     def get_passage(
         book: str,

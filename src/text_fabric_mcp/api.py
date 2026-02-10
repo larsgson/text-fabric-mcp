@@ -1,4 +1,4 @@
-"""FastAPI HTTP layer wrapping TFEngine."""
+"""FastAPI HTTP layer wrapping CFEngine."""
 
 from __future__ import annotations
 
@@ -6,13 +6,17 @@ import hmac
 import logging
 import os
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from text_fabric_mcp.cf_engine import CFEngine
 from text_fabric_mcp.quiz_engine import QuizStore, generate_session
 from text_fabric_mcp.quiz_models import QuizDefinition
-from text_fabric_mcp.tf_engine import TFEngine
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -43,7 +47,7 @@ def health():
     return {"status": "ok"}
 
 
-engine = TFEngine()
+engine = CFEngine()
 quiz_store = QuizStore()
 
 
@@ -248,13 +252,13 @@ if not (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")):
     logger.warning("GOOGLE_API_KEY not set. Chat endpoint will be unavailable.")
 
 
-def _provision_tf_data():
-    """Copy pre-downloaded TF data from Docker image to the persistent volume.
+def _provision_corpus_data():
+    """Copy pre-downloaded corpus data from Docker image to the persistent volume.
 
-    During Docker build, TF data is downloaded to /root/text-fabric-data/.
-    At runtime on Railway, the volume is mounted at /data and HOME=/data.
-    This function copies the raw .tf source files (excluding compiled caches)
-    so that Text-Fabric recompiles them in the runtime environment.
+    During Docker build, TF-format corpus data is downloaded to
+    /root/text-fabric-data/. At runtime on Railway, the volume is mounted
+    at /data and HOME=/data. This function copies the .tf source files so
+    that Context-Fabric can compile them to .cfm format on first load.
     """
     import shutil
     from pathlib import Path
@@ -264,7 +268,7 @@ def _provision_tf_data():
         return  # Local dev — no volume
 
     # Marker version: bump this to force re-provisioning after image changes.
-    marker = data_dir / "text-fabric-data" / ".cache-v2"
+    marker = data_dir / "text-fabric-data" / ".cache-v3"
     for d in ["/data/text-fabric-data", "/data/quizzes"]:
         Path(d).mkdir(parents=True, exist_ok=True)
 
@@ -272,25 +276,26 @@ def _provision_tf_data():
     dst = data_dir / "text-fabric-data"
 
     if not marker.exists() and src.exists():
-        logger.info("Provisioning Text-Fabric data from Docker image...")
-        # Wipe stale data and copy fresh from image
+        logger.info("Provisioning corpus data from Docker image...")
         github_dst = dst / "github"
         if github_dst.exists():
             shutil.rmtree(github_dst)
         shutil.copytree(src, dst, dirs_exist_ok=True)
 
-        # Remove build-time compiled caches (.tf/N/ dirs with .tfx files).
-        # These are gzipped pickles from the build env (HOME=/root) and
-        # won't load correctly at runtime (HOME=/data).
+        # Remove any stale compiled caches from build env.
         for tf_cache in dst.rglob(".tf"):
             if tf_cache.is_dir():
                 shutil.rmtree(tf_cache)
+        for cfm_dir in dst.rglob(".cfm"):
+            if cfm_dir.is_dir():
+                shutil.rmtree(cfm_dir)
 
         marker.touch()
-        logger.info("TF data provisioned. Caches will be compiled on first load.")
+        logger.info("Corpus data provisioned. CF will compile on first load.")
     elif not src.exists() and not marker.exists():
         logger.warning(
-            "No pre-downloaded TF data found. TF will attempt runtime download."
+            "No pre-downloaded corpus data found. "
+            "Corpora will need to be available at runtime."
         )
 
 
@@ -298,7 +303,7 @@ def main():
     """Run the API server."""
     import uvicorn
 
-    _provision_tf_data()
+    _provision_corpus_data()
 
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)

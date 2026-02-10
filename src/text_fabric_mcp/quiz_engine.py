@@ -9,13 +9,13 @@ import random
 from pathlib import Path
 from typing import Any
 
+from text_fabric_mcp.cf_engine import WORD_FEATURES, WORD_TYPE, CFEngine
 from text_fabric_mcp.quiz_models import (
     FeatureVisibility,
     QuizDefinition,
     QuizQuestion,
     QuizSession,
 )
-from text_fabric_mcp.tf_engine import WORD_FEATURES, WORD_TYPE, TFEngine
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +71,7 @@ class QuizStore:
 
 
 # Canonical feature name -> TF feature name mapping
-# This maps quiz feature names to what TFEngine._word_info produces
+# This maps quiz feature names to what CFEngine._word_info produces
 QUIZ_FEATURE_TO_WORD_INFO = {
     "gloss": "gloss",
     "part_of_speech": "part_of_speech",
@@ -88,15 +88,14 @@ QUIZ_FEATURE_TO_WORD_INFO = {
 
 def generate_session(
     quiz: QuizDefinition,
-    engine: TFEngine,
+    engine: CFEngine,
 ) -> QuizSession:
     """Generate a quiz session with questions from the quiz definition.
 
     Executes the search template against the corpus and builds questions
     from matching words.
     """
-    A = engine._ensure_loaded(quiz.corpus)
-    api = A.api
+    api = engine._ensure_loaded(quiz.corpus)
     feat_map = WORD_FEATURES.get(quiz.corpus, WORD_FEATURES["hebrew"])
     wtype = WORD_TYPE.get(quiz.corpus, "word")
 
@@ -123,7 +122,7 @@ def generate_session(
     template = "\n".join(scope_lines) + "\n"
     logger.info("Quiz search template:\n%s", template)
 
-    results = A.search(template)
+    results = list(api.S.search(template))
     logger.info("Search returned %d results", len(results))
 
     # Determine which features to show and request

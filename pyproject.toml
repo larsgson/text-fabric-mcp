@@ -4,22 +4,26 @@ build-backend = "hatchling.build"
 
 [project]
 name = "text-fabric-mcp"
-version = "0.1.0"
-description = "Biblical text analysis API and MCP server powered by Text-Fabric"
-requires-python = ">=3.10"
+version = "0.2.0"
+description = "Biblical text analysis API and MCP server powered by Context-Fabric"
+requires-python = ">=3.13"
 dependencies = [
-    "mcp[cli]>=1.0.0",
-    "text-fabric>=12.0.0",
+    "context-fabric[mcp]>=0.5.0",
     "pydantic>=2.0.0",
     "fastapi>=0.110.0",
     "uvicorn[standard]>=0.27.0",
     "google-genai>=1.0.0",
+    "python-dotenv>=1.0.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
     "httpx>=0.27.0",
+]
+# Keep text-fabric available for corpus pre-download in Docker builds
+build = [
+    "text-fabric>=12.0.0",
 ]
 
 [project.scripts]

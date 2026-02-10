@@ -1,12 +1,19 @@
-"""Text-Fabric data access layer for biblical texts."""
+"""Context-Fabric data access layer for biblical texts.
+
+Drop-in replacement for tf_engine.py that uses Context Fabric's memory-mapped
+engine instead of Text-Fabric. The public interface (method signatures, return
+types) is identical so that chat.py, quiz_engine.py, and api.py work unchanged.
+"""
 
 from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 from typing import Any
 
-from tf.app import use
+import cfabric
+from cfabric.core.api import Api
 
 from text_fabric_mcp.models import (
     BookInfo,
@@ -20,14 +27,15 @@ from text_fabric_mcp.models import (
 
 logger = logging.getLogger(__name__)
 
-# Corpus registry: name -> (tf org/repo, display name)
+# Corpus registry: name -> (path-finding callable, display name)
+# Paths are resolved at load time from the TF data cache or a configured location.
 CORPORA = {
     "hebrew": ("ETCBC/bhsa", "Biblical Hebrew (BHSA)"),
     "greek": ("ETCBC/nestle1904", "Greek New Testament (Nestle 1904)"),
 }
 
 # Word-level features to retrieve per corpus.
-# Maps our canonical names to the TF feature names.
+# Maps our canonical names to the TF/CF feature names.
 WORD_FEATURES = {
     "hebrew": {
         "text": "g_word_utf8",
@@ -67,45 +75,119 @@ WORD_TYPE = {
     "greek": "w",
 }
 
+# Features to exclude per corpus when loading.
+# The Nestle 1904 "nodeId" feature has int64 values that overflow CF's int32
+# storage (as of CF 0.5.x).  We don't use it, so skip it.
+_EXCLUDE_FEATURES: dict[str, set[str]] = {
+    "greek": {"nodeId"},
+}
 
-class TFEngine:
-    """Manages Text-Fabric corpus loading and queries."""
+
+def _find_corpus_path(org_repo: str) -> str:
+    """Locate a TF-format corpus on disk.
+
+    Searches the standard text-fabric-data locations that both TF and CF
+    use when corpora have been pre-downloaded.
+    """
+    home = os.environ.get("HOME", str(Path.home()))
+    # Standard TF download layout: ~/text-fabric-data/github/ORG/REPO/tf/VERSION
+    base = Path(home) / "text-fabric-data" / "github" / org_repo / "tf"
+    if base.exists():
+        # Pick the latest version directory
+        versions = sorted([d for d in base.iterdir() if d.is_dir()], reverse=True)
+        if versions:
+            return str(versions[0])
+
+    # Fallback: try cfabric cache directory
+    try:
+        cache_dir = cfabric.get_cache_dir()
+        alt = Path(cache_dir) / org_repo
+        if alt.exists():
+            return str(alt)
+    except Exception:
+        pass
+
+    raise FileNotFoundError(
+        f"Corpus data not found for {org_repo}. "
+        f"Searched: {base}. HOME={home}. "
+        "Ensure the corpus has been pre-downloaded."
+    )
+
+
+class CFEngine:
+    """Manages Context-Fabric corpus loading and queries.
+
+    Public API is identical to the former TFEngine so that all callers
+    (chat.py, quiz_engine.py, api.py, tools/*) work without changes.
+    """
 
     def __init__(self) -> None:
-        self._apis: dict[str, Any] = {}
-        self._loaded: dict[str, bool] = {}
+        self._apis: dict[str, Api] = {}
+        self._fabrics: dict[str, cfabric.Fabric] = {}
 
-    def _ensure_loaded(self, corpus: str) -> Any:
-        """Load a corpus if not already loaded, return the TF API."""
+    def _ensure_loaded(self, corpus: str) -> Api:
+        """Load a corpus if not already loaded, return the CF Api."""
         if corpus not in CORPORA:
             raise ValueError(
                 f"Unknown corpus '{corpus}'. Available: {list(CORPORA.keys())}"
             )
         if corpus not in self._apis:
             org_repo, display_name = CORPORA[corpus]
-            home = os.environ.get("HOME", "~")
             logger.info(
-                "Loading %s from %s (HOME=%s) ...", display_name, org_repo, home
+                "Loading %s (%s) via Context-Fabric ...", display_name, org_repo
             )
-            api = use(org_repo, checkout="local", silent="deep")
-            # Verify the API initialized properly.
-            # use() returns a TfApp; the actual API is on .api.
-            inner = getattr(api, "api", None)
-            if (
-                inner is None
-                or not hasattr(inner, "T")
-                or not hasattr(inner.F, "otype")
-            ):
+
+            path = _find_corpus_path(org_repo)
+            logger.info("Corpus path: %s", path)
+
+            # Hide excluded .tf files so CF never sees them during scan
+            # or compilation (CF auto-compiles ALL .tf it finds).
+            exclude = _EXCLUDE_FEATURES.get(corpus, set())
+            hidden: list[tuple[Path, Path]] = []
+            for feat_name in exclude:
+                tf_file = Path(path) / f"{feat_name}.tf"
+                skip_file = tf_file.with_suffix(".tf._skip")
+                if tf_file.exists():
+                    tf_file.rename(skip_file)
+                    hidden.append((skip_file, tf_file))
+                    logger.info("Temporarily hidden: %s", tf_file)
+
+            try:
+                CF = cfabric.Fabric(locations=path, silent="deep")
+                api = CF.loadAll(silent="deep")
+            except Exception as e:
+                logger.error("Context-Fabric load failed for %s: %s", path, e)
                 raise RuntimeError(
-                    f"Failed to load corpus '{corpus}' from {org_repo}. "
-                    f"HOME={home}. "
-                    "Text-Fabric data may not have downloaded correctly. "
-                    "Check network access and disk space."
+                    f"Failed to load corpus '{corpus}' from {path}: {e}"
+                ) from e
+            finally:
+                # Always restore hidden files
+                for skip_file, tf_file in hidden:
+                    if skip_file.exists():
+                        skip_file.rename(tf_file)
+                        logger.info("Restored: %s", tf_file)
+
+            if api is None or not hasattr(api, "T") or not hasattr(api.F, "otype"):
+                logger.error(
+                    "Corpus loaded but API incomplete: api=%s, hasT=%s, hasOtype=%s",
+                    api is not None,
+                    hasattr(api, "T") if api else False,
+                    hasattr(api.F, "otype") if api and hasattr(api, "F") else False,
                 )
+                raise RuntimeError(
+                    f"Failed to load corpus '{corpus}' from {path}. "
+                    "Context-Fabric API did not initialize correctly."
+                )
+
+            self._fabrics[corpus] = CF
             self._apis[corpus] = api
-            self._loaded[corpus] = True
             logger.info("Loaded %s", display_name)
+
         return self._apis[corpus]
+
+    # ------------------------------------------------------------------
+    # Public query methods — identical signatures to TFEngine
+    # ------------------------------------------------------------------
 
     def list_corpora(self) -> list[dict[str, str]]:
         """Return available corpora."""
@@ -113,8 +195,7 @@ class TFEngine:
 
     def list_books(self, corpus: str = "hebrew") -> list[BookInfo]:
         """Return all books with chapter counts for a corpus."""
-        A = self._ensure_loaded(corpus)
-        api = A.api
+        api = self._ensure_loaded(corpus)
         books = []
         for book_node in api.F.otype.s("book"):
             book_name = api.T.sectionFromNode(book_node)[0]
@@ -131,8 +212,7 @@ class TFEngine:
         corpus: str = "hebrew",
     ) -> PassageResult:
         """Get words with features for a verse range."""
-        A = self._ensure_loaded(corpus)
-        api = A.api
+        api = self._ensure_loaded(corpus)
         feat_map = WORD_FEATURES.get(corpus, WORD_FEATURES["hebrew"])
 
         if verse_end is None:
@@ -164,8 +244,7 @@ class TFEngine:
 
     def get_schema(self, corpus: str = "hebrew") -> SchemaResult:
         """Return object types and their features for a corpus."""
-        A = self._ensure_loaded(corpus)
-        api = A.api
+        api = self._ensure_loaded(corpus)
 
         object_types: list[ObjectTypeInfo] = []
         for otype in api.F.otype.all:
@@ -178,6 +257,8 @@ class TFEngine:
             features: list[FeatureInfo] = []
             for feat_name in sorted(api.Fall()):
                 feat_obj = api.Fs(feat_name)
+                if feat_obj is None:
+                    continue
                 val = feat_obj.v(sample_node)
                 if val is not None:
                     features.append(FeatureInfo(name=feat_name))
@@ -197,11 +278,10 @@ class TFEngine:
         limit: int = 100,
     ) -> list[dict]:
         """Search for words matching feature constraints."""
-        A = self._ensure_loaded(corpus)
-        api = A.api
+        api = self._ensure_loaded(corpus)
         wtype = WORD_TYPE.get(corpus, "word")
 
-        # Build Text-Fabric search template
+        # Build search template
         constraints = []
         if features:
             for feat, val in features.items():
@@ -220,12 +300,11 @@ class TFEngine:
         else:
             template = f"{wtype}\n{constraint_str}\n"
 
-        results = A.search(template)
+        results = list(api.S.search(template))
 
         feat_map = WORD_FEATURES.get(corpus, WORD_FEATURES["hebrew"])
         output = []
         for result_tuple in results[:limit]:
-            # Last element in tuple is always the word node
             w = result_tuple[-1]
             section = api.T.sectionFromNode(w)
             info = self._word_info(api, w, feat_map)
@@ -249,8 +328,7 @@ class TFEngine:
         corpus: str = "hebrew",
     ) -> dict:
         """Get the hierarchical context (phrase, clause, sentence) for a word."""
-        A = self._ensure_loaded(corpus)
-        api = A.api
+        api = self._ensure_loaded(corpus)
 
         wtype = WORD_TYPE.get(corpus, "word")
 
@@ -271,7 +349,6 @@ class TFEngine:
             "word": self._word_info(api, w, feat_map).model_dump(),
         }
 
-        # Walk up the hierarchy — available types vary by corpus
         all_types = [
             t for t in api.F.otype.all if t not in ("book", "chapter", "verse", wtype)
         ]
@@ -282,11 +359,13 @@ class TFEngine:
                 parent_features = {}
                 for feat_name in sorted(api.Fall()):
                     feat_obj = api.Fs(feat_name)
+                    if feat_obj is None:
+                        continue
                     val = feat_obj.v(parent)
                     if val is not None:
                         parent_features[feat_name] = str(val)
                 context[parent_type] = {
-                    "node": parent,
+                    "node": int(parent),
                     "features": parent_features,
                     "text": api.T.text(parent),
                 }
@@ -299,23 +378,12 @@ class TFEngine:
         corpus: str = "hebrew",
         limit: int = 50,
     ) -> list[dict]:
-        """Search using a Text-Fabric search template for structural patterns.
-
-        Templates express hierarchical containment. For example:
-            clause typ=NmCl
-              phrase function=Pred
-                word sp=verb
-
-        This finds nominal clauses containing a predicate phrase with a verb.
-        Indentation indicates nesting (parent contains child).
-        """
-        A = self._ensure_loaded(corpus)
-        api = A.api
+        """Search using a Text-Fabric search template for structural patterns."""
+        api = self._ensure_loaded(corpus)
         feat_map = WORD_FEATURES.get(corpus, WORD_FEATURES["hebrew"])
-
         wtype = WORD_TYPE.get(corpus, "word")
 
-        results = A.search(template)
+        results = list(api.S.search(template))
 
         output = []
         for result_tuple in results[:limit]:
@@ -333,10 +401,12 @@ class TFEngine:
                 if otype == wtype:
                     obj["word"] = self._word_info(api, node, feat_map).model_dump()
                 else:
-                    # Collect features for non-word objects
                     features = {}
                     for feat_name in sorted(api.Fall()):
-                        val = api.Fs(feat_name).v(node)
+                        feat_obj = api.Fs(feat_name)
+                        if feat_obj is None:
+                            continue
+                        val = feat_obj.v(node)
                         if val is not None:
                             features[feat_name] = str(val)
                     obj["features"] = features
@@ -352,8 +422,7 @@ class TFEngine:
         limit: int = 50,
     ) -> dict:
         """Look up a lexeme and return its occurrences with context."""
-        A = self._ensure_loaded(corpus)
-        api = A.api
+        api = self._ensure_loaded(corpus)
         feat_map = WORD_FEATURES.get(corpus, WORD_FEATURES["hebrew"])
 
         lex_feat = feat_map.get("lexeme", "lex")
@@ -361,10 +430,9 @@ class TFEngine:
         sp_feat = feat_map.get("part_of_speech", "sp")
         lex_utf8_feat = feat_map.get("lexeme_utf8", "lex_utf8")
 
-        # Use TF search for efficient lexeme lookup
         wtype = WORD_TYPE.get(corpus, "word")
         template = f"{wtype} {lex_feat}={lexeme}\n"
-        results = A.search(template)
+        results = list(api.S.search(template))
         corpus_count = len(results)
 
         first_gloss = ""
@@ -376,17 +444,23 @@ class TFEngine:
             w = result_tuple[0]
 
             if not first_gloss and gloss_feat:
-                g = api.Fs(gloss_feat).v(w)
-                if g:
-                    first_gloss = str(g)
+                feat_obj = api.Fs(gloss_feat)
+                if feat_obj:
+                    g = feat_obj.v(w)
+                    if g:
+                        first_gloss = str(g)
             if not first_sp and sp_feat:
-                s = api.Fs(sp_feat).v(w)
-                if s:
-                    first_sp = str(s)
+                feat_obj = api.Fs(sp_feat)
+                if feat_obj:
+                    s = feat_obj.v(w)
+                    if s:
+                        first_sp = str(s)
             if not first_utf8 and lex_utf8_feat:
-                u = api.Fs(lex_utf8_feat).v(w)
-                if u:
-                    first_utf8 = str(u)
+                feat_obj = api.Fs(lex_utf8_feat)
+                if feat_obj:
+                    u = feat_obj.v(w)
+                    if u:
+                        first_utf8 = str(u)
 
             section = api.T.sectionFromNode(w)
             matches.append(
@@ -416,8 +490,7 @@ class TFEngine:
         corpus: str = "hebrew",
     ) -> list[dict]:
         """Get unique lexemes in a passage with frequency and gloss."""
-        A = self._ensure_loaded(corpus)
-        api = A.api
+        api = self._ensure_loaded(corpus)
         feat_map = WORD_FEATURES.get(corpus, WORD_FEATURES["hebrew"])
 
         if verse_end is None:
@@ -432,27 +505,28 @@ class TFEngine:
                 continue
             for w in api.L.d(verse_node, otype=wtype):
                 lex_feat = feat_map.get("lexeme", "lex")
-                lex = api.Fs(lex_feat).v(w) or ""
+                feat_obj = api.Fs(lex_feat)
+                lex = feat_obj.v(w) if feat_obj else ""
+                lex = lex or ""
                 if not lex or lex in lexemes:
                     if lex in lexemes:
                         lexemes[lex]["count"] += 1
                     continue
 
                 gloss_feat = feat_map.get("gloss", "gloss")
-                gloss_val = api.Fs(gloss_feat).v(w) if gloss_feat else None
+                gloss_obj = api.Fs(gloss_feat) if gloss_feat else None
+                gloss_val = gloss_obj.v(w) if gloss_obj else None
 
                 sp_feat = feat_map.get("part_of_speech", "sp")
-                sp_val = api.Fs(sp_feat).v(w) if sp_feat else None
+                sp_obj = api.Fs(sp_feat) if sp_feat else None
+                sp_val = sp_obj.v(w) if sp_obj else None
 
                 lex_utf8_feat = feat_map.get("lexeme_utf8", "lex_utf8")
-                lex_utf8_val = api.Fs(lex_utf8_feat).v(w) if lex_utf8_feat else None
+                utf8_obj = api.Fs(lex_utf8_feat) if lex_utf8_feat else None
+                lex_utf8_val = utf8_obj.v(w) if utf8_obj else None
 
-                freq_feat = "freq_lex"
-                freq_val = None
-                try:
-                    freq_val = api.Fs(freq_feat).v(w)
-                except Exception:
-                    pass
+                freq_obj = api.Fs("freq_lex")
+                freq_val = freq_obj.v(w) if freq_obj else None
 
                 lexemes[lex] = {
                     "lexeme": lex,
@@ -467,14 +541,17 @@ class TFEngine:
             lexemes.values(), key=lambda x: x["corpus_frequency"], reverse=True
         )
 
-    def _word_info(self, api: Any, w: int, feat_map: dict[str, str]) -> WordInfo:
+    def _word_info(self, api: Api, w: int, feat_map: dict[str, str]) -> WordInfo:
         """Extract word features into a WordInfo model."""
 
         def _get(canonical: str) -> str:
             tf_name = feat_map.get(canonical, "")
             if not tf_name:
                 return ""
-            val = api.Fs(tf_name).v(w)
+            feat_obj = api.Fs(tf_name)
+            if feat_obj is None:
+                return ""
+            val = feat_obj.v(w)
             return str(val) if val is not None else ""
 
         return WordInfo(

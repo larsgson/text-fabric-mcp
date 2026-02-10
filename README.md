@@ -1,6 +1,6 @@
 # Text-Fabric MCP
 
-Biblical text analysis server powered by [Text-Fabric](https://annotation.github.io/text-fabric/), providing morphologically annotated Hebrew Bible (BHSA) and Greek New Testament (Nestle 1904) data via both an MCP (Model Context Protocol) interface and a REST API.
+Biblical text analysis server powered by [Context-Fabric](https://context-fabric.ai/), providing morphologically annotated Hebrew Bible (BHSA) and Greek New Testament (Nestle 1904) data via both an MCP (Model Context Protocol) interface and a REST API.
 
 ## Features
 
@@ -8,7 +8,7 @@ Biblical text analysis server powered by [Text-Fabric](https://annotation.github
 - **Greek New Testament** -- 27 books (Matthew--Revelation) from [ETCBC/nestle1904](https://github.com/ETCBC/nestle1904)
 - **Passage retrieval** -- verse-level text with per-word lexeme, gloss, part of speech, and morphological features
 - **Morphological search** -- find words by part of speech, verbal stem, tense, gender, number, person, state, and more
-- **Structural search** -- find syntactic patterns (clauses, phrases) using Text-Fabric search templates
+- **Structural search** -- find syntactic patterns (clauses, phrases) using search templates
 - **Vocabulary extraction** -- unique lexemes in a passage sorted by corpus frequency
 - **LLM chat** -- agentic conversation powered by Google Gemini that can call all the above tools (free tier available)
 - **Quiz generation** -- configurable quiz engine for Hebrew morphology drills
@@ -21,20 +21,18 @@ Biblical text analysis server powered by [Text-Fabric](https://annotation.github
 # Clone and set up
 git clone https://github.com/<your-org>/text-fabric-mcp.git
 cd text-fabric-mcp
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
+cp .env.example .env   # configure API keys
 
 # Start the REST API server
-tf-api
+uv run tf-api
 ```
 
-The API runs at `http://localhost:8000`. The first request loads corpus data into memory (~10 seconds on first download).
+The API runs at `http://localhost:8000`. The first request loads corpus data into memory (~2s with cached data).
 
 ### Run as MCP server
 
 ```bash
-tf-mcp
+uv run tf-mcp
 ```
 
 This starts the MCP (Model Context Protocol) server for use with Claude Desktop or other MCP-compatible clients.
@@ -73,7 +71,7 @@ When running as an MCP server, the following tools are available to AI assistant
 src/text_fabric_mcp/
 ├── server.py          # MCP server entry point
 ├── api.py             # FastAPI HTTP layer
-├── tf_engine.py       # Text-Fabric data access
+├── cf_engine.py       # Context-Fabric data access
 ├── chat.py            # Google Gemini LLM integration
 ├── models.py          # Pydantic data models
 ├── quiz_engine.py     # Quiz generation engine
@@ -86,7 +84,7 @@ src/text_fabric_mcp/
     └── quiz.py
 tests/
 ├── test_api.py
-├── test_tf_engine.py
+├── test_cf_engine.py
 └── test_quiz.py
 ```
 
@@ -104,7 +102,7 @@ Teachers can create quizzes in two ways:
 }
 ```
 
-The AI explores the text, builds a `QuizDefinition`, validates it against Text-Fabric, and returns the definition with a preview. The frontend can then save it via `POST /api/quizzes`.
+The AI explores the text, builds a `QuizDefinition`, validates it against the corpus, and returns the definition with a preview. The frontend can then save it via `POST /api/quizzes`.
 
 ### Via MCP (for AI assistants like Claude Desktop)
 
@@ -113,10 +111,10 @@ The `build_quiz` tool lets an AI assistant build quiz definitions interactively.
 ## Testing
 
 ```bash
-pytest
+uv run pytest
 ```
 
-Tests download Text-Fabric data on first run (cached in `~/text-fabric-data/`).
+Tests require corpus data on first run (cached in `~/text-fabric-data/`).
 
 ## Configuration
 
