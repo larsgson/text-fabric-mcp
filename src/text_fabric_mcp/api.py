@@ -375,10 +375,10 @@ if not (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")):
 def _provision_corpus_data():
     """Copy pre-downloaded corpus data from Docker image to the persistent volume.
 
-    During Docker build, TF-format corpus data is downloaded to
-    /root/text-fabric-data/. At runtime on Railway, the volume is mounted
-    at /data and HOME=/data. This function copies the .tf source files so
-    that Context-Fabric can compile them to .cfm format on first load.
+    During Docker build, corpus data (.tf files) and pre-compiled caches
+    (.cfm directories) are prepared at /root/text-fabric-data/. At runtime
+    on Railway, the volume is mounted at /data and HOME=/data. This function
+    copies everything so Context-Fabric can load instantly without recompiling.
     """
     import shutil
     from pathlib import Path
@@ -387,8 +387,8 @@ def _provision_corpus_data():
     if not data_dir.exists():
         return  # Local dev — no volume
 
-    # Marker version: bump this to force re-provisioning after image changes.
-    marker = data_dir / "text-fabric-data" / ".cache-v3"
+    # Marker version: bump to force re-provisioning after image changes.
+    marker = data_dir / "text-fabric-data" / ".cache-v4"
     for d in ["/data/text-fabric-data", "/data/quizzes"]:
         Path(d).mkdir(parents=True, exist_ok=True)
 
@@ -400,18 +400,16 @@ def _provision_corpus_data():
         github_dst = dst / "github"
         if github_dst.exists():
             shutil.rmtree(github_dst)
+        # Copy .tf source files AND pre-compiled .cfm caches
         shutil.copytree(src, dst, dirs_exist_ok=True)
 
-        # Remove any stale compiled caches from build env.
+        # Remove stale TF .tf compile caches (not the .tf source files)
         for tf_cache in dst.rglob(".tf"):
             if tf_cache.is_dir():
                 shutil.rmtree(tf_cache)
-        for cfm_dir in dst.rglob(".cfm"):
-            if cfm_dir.is_dir():
-                shutil.rmtree(cfm_dir)
 
         marker.touch()
-        logger.info("Corpus data provisioned. CF will compile on first load.")
+        logger.info("Corpus data provisioned with pre-compiled .cfm caches.")
     elif not src.exists() and not marker.exists():
         logger.warning(
             "No pre-downloaded corpus data found. "

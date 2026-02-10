@@ -23,8 +23,23 @@ use('ETCBC/nestle1904', silent='deep')" \
  && echo '=== Corpus pre-download OK ===' \
  && find /root/text-fabric-data -maxdepth 4 -type d | head -20
 
+# Pre-compile .cfm caches at build time to avoid memory spike at runtime.
+# Hide nodeId.tf for Greek (int32 overflow in CF 0.5.x).
+RUN mv /root/text-fabric-data/github/ETCBC/nestle1904/tf/*/nodeId.tf \
+       /root/text-fabric-data/github/ETCBC/nestle1904/tf/nodeId.tf._skip 2>/dev/null; \
+    python -c "\
+import cfabric; \
+for path in ['/root/text-fabric-data/github/ETCBC/bhsa/tf/2021', \
+             '/root/text-fabric-data/github/ETCBC/nestle1904/tf/0.4.0']: \
+    CF = cfabric.Fabric(locations=path, silent=True); \
+    CF.loadAll(silent=True); \
+    print(f'Compiled: {path}')" \
+ && mv /root/text-fabric-data/github/ETCBC/nestle1904/tf/nodeId.tf._skip \
+       /root/text-fabric-data/github/ETCBC/nestle1904/tf/*/nodeId.tf 2>/dev/null; \
+    echo '=== CFM pre-compilation OK ==='
+
 # At runtime, HOME=/data (persistent volume).
-# Context-Fabric will compile .tf -> .cfm on first load.
+# Pre-compiled .cfm caches are copied to the volume on first boot.
 ENV HOME=/data
 ENV QUIZ_DIR=/data/quizzes
 
