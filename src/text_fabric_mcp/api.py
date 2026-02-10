@@ -68,6 +68,36 @@ class ConstructionSearchRequest(BaseModel):
     limit: int = 50
 
 
+class AdvancedSearchRequest(BaseModel):
+    template: str
+    return_type: str = "results"
+    aggregate_features: list[str] | None = None
+    group_by_section: bool = False
+    top_n: int = 50
+    limit: int = 100
+    corpus: str = "hebrew"
+
+
+class SearchContinueRequest(BaseModel):
+    cursor_id: str
+    offset: int = 0
+    limit: int = 100
+
+
+class ComparativeSearchRequest(BaseModel):
+    template_hebrew: str
+    template_greek: str
+    return_type: str = "count"
+    limit: int = 50
+
+
+class CompareDistributionRequest(BaseModel):
+    feature: str
+    sections: list[dict]
+    node_type: str = "word"
+    top_n: int = 20
+
+
 class ChatRequest(BaseModel):
     message: str
     history: list[dict] | None = None
@@ -123,11 +153,101 @@ def search_words(req: WordSearchRequest):
 
 @app.post("/api/search/constructions")
 def search_constructions(req: ConstructionSearchRequest):
-    """Search for structural patterns using Text-Fabric search templates."""
+    """Search for structural patterns using search templates."""
     return engine.search_constructions(
         template=req.template,
         corpus=req.corpus,
         limit=req.limit,
+    )
+
+
+@app.get("/api/search/syntax-guide")
+def search_syntax_guide(section: str | None = None):
+    """Get search template syntax documentation."""
+    return engine.get_search_syntax_guide(section)
+
+
+@app.post("/api/search/advanced")
+def search_advanced(req: AdvancedSearchRequest):
+    """Search with advanced return types (results, count, statistics, passages)."""
+    return engine.search_advanced(
+        template=req.template,
+        return_type=req.return_type,
+        aggregate_features=req.aggregate_features,
+        group_by_section=req.group_by_section,
+        top_n=req.top_n,
+        limit=req.limit,
+        corpus=req.corpus,
+    )
+
+
+@app.post("/api/search/continue")
+def search_continue_endpoint(req: SearchContinueRequest):
+    """Continue paginated search results using a cursor ID."""
+    return engine.search_continue(
+        cursor_id=req.cursor_id,
+        offset=req.offset,
+        limit=req.limit,
+    )
+
+
+@app.post("/api/search/comparative")
+def search_comparative(req: ComparativeSearchRequest):
+    """Search same pattern across Hebrew and Greek corpora."""
+    return engine.search_comparative(
+        template_hebrew=req.template_hebrew,
+        template_greek=req.template_greek,
+        return_type=req.return_type,
+        limit=req.limit,
+    )
+
+
+@app.get("/api/features")
+def list_features(
+    kind: str = "all",
+    node_types: str | None = None,
+    corpus: str = "hebrew",
+):
+    """List available features with optional filtering."""
+    nt_list = node_types.split(",") if node_types else None
+    return engine.list_features(kind=kind, node_types=nt_list, corpus=corpus)
+
+
+@app.get("/api/features/{feature}")
+def describe_feature(
+    feature: str,
+    sample_limit: int = 20,
+    corpus: str = "hebrew",
+):
+    """Get detailed info about a feature with sample values."""
+    return engine.describe_feature(feature, sample_limit, corpus)
+
+
+@app.get("/api/edges")
+def list_edge_features(corpus: str = "hebrew"):
+    """List available edge features."""
+    return engine.list_edge_features(corpus)
+
+
+@app.get("/api/edges/{edge_feature}")
+def get_edges(
+    edge_feature: str,
+    node: int,
+    direction: str = "from",
+    corpus: str = "hebrew",
+):
+    """Get edges from/to a node using a specific edge feature."""
+    return engine.get_edge_features(node, edge_feature, direction, corpus)
+
+
+@app.post("/api/compare/distribution")
+def compare_distribution(req: CompareDistributionRequest):
+    """Compare feature distributions across books/sections."""
+    return engine.compare_feature_distribution(
+        feature=req.feature,
+        sections=req.sections,
+        node_type=req.node_type,
+        top_n=req.top_n,
     )
 
 

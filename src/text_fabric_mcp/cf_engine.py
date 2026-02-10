@@ -181,6 +181,19 @@ class CFEngine:
 
             self._fabrics[corpus] = CF
             self._apis[corpus] = api
+
+            # Register with cfabric_mcp corpus_manager so built-in tools
+            # (search, describe_feature, etc.) can access our loaded corpora.
+            try:
+                from cfabric_mcp.corpus_manager import corpus_manager as cm
+
+                if not cm.is_loaded(corpus):
+                    cm._corpora[corpus] = (CF, api)
+                    if cm.current is None:
+                        cm._current = corpus
+            except ImportError:
+                pass
+
             logger.info("Loaded %s", display_name)
 
         return self._apis[corpus]
@@ -570,3 +583,257 @@ class CFEngine:
             verbal_tense=_get("verbal_tense"),
             language=_get("language"),
         )
+
+    # ------------------------------------------------------------------
+    # Discovery & advanced search — delegates to cfabric_mcp built-ins
+    # ------------------------------------------------------------------
+
+    def get_search_syntax_guide(self, section: str | None = None) -> dict:
+        """Return search syntax documentation.
+
+        Args:
+            section: Section name (basics, structure, relations, quantifiers,
+                     examples). None returns overview with section list.
+        """
+        from cfabric_mcp.tools import search_syntax_guide
+
+        return search_syntax_guide(section)
+
+    def describe_feature(
+        self,
+        features: str | list[str],
+        sample_limit: int = 20,
+        corpus: str = "hebrew",
+    ) -> dict:
+        """Get detailed info about one or more features with sample values.
+
+        Args:
+            features: Feature name or list of names (e.g. "sp" or ["sp", "vt"])
+            sample_limit: Max sample values per feature (default 20).
+            corpus: Corpus name.
+        """
+        self._ensure_loaded(corpus)
+        from cfabric_mcp.tools import describe_features
+
+        return describe_features(features, sample_limit, corpus)
+
+    def list_features(
+        self,
+        kind: str = "all",
+        node_types: list[str] | None = None,
+        corpus: str = "hebrew",
+    ) -> dict:
+        """List features with optional filtering by kind and node type.
+
+        Args:
+            kind: "all", "node", or "edge".
+            node_types: Filter to features for these types (e.g. ["word"]).
+            corpus: Corpus name.
+        """
+        self._ensure_loaded(corpus)
+        from cfabric_mcp.tools import list_features
+
+        return list_features(kind, node_types, corpus)
+
+    def search_advanced(
+        self,
+        template: str,
+        return_type: str = "results",
+        aggregate_features: list[str] | None = None,
+        group_by_section: bool = False,
+        top_n: int = 50,
+        limit: int = 100,
+        corpus: str = "hebrew",
+    ) -> dict:
+        """Search with advanced return types.
+
+        Args:
+            template: Search template string.
+            return_type: "results", "count", "statistics", or "passages".
+            aggregate_features: For statistics — which features to aggregate.
+            group_by_section: For statistics — include distribution by book.
+            top_n: For statistics — max values per feature (default 50).
+            limit: For results/passages — page size (default 100).
+            corpus: Corpus name.
+        """
+        self._ensure_loaded(corpus)
+        from cfabric_mcp.tools import search as cf_search
+
+        return cf_search(
+            template=template,
+            return_type=return_type,
+            aggregate_features=aggregate_features,
+            group_by_section=group_by_section,
+            top_n=top_n,
+            limit=limit,
+            corpus=corpus,
+        )
+
+    def search_continue(
+        self,
+        cursor_id: str,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> dict:
+        """Continue paginated search using a cursor ID from search_advanced."""
+        from cfabric_mcp.tools import search_continue as cf_search_continue
+
+        return cf_search_continue(cursor_id=cursor_id, offset=offset, limit=limit)
+
+    def search_comparative(
+        self,
+        template_hebrew: str,
+        template_greek: str,
+        return_type: str = "count",
+        limit: int = 50,
+    ) -> dict:
+        """Search same or adapted pattern across both corpora.
+
+        Args:
+            template_hebrew: Search template for Hebrew corpus.
+            template_greek: Search template for Greek corpus.
+            return_type: "count" or "statistics" (most useful for comparison).
+            limit: Max results per corpus.
+        """
+        from cfabric_mcp.tools import search as cf_search
+
+        results = {}
+        for corpus_id, template in [
+            ("hebrew", template_hebrew),
+            ("greek", template_greek),
+        ]:
+            try:
+                self._ensure_loaded(corpus_id)
+                results[corpus_id] = cf_search(
+                    template=template,
+                    return_type=return_type,
+                    limit=limit,
+                    corpus=corpus_id,
+                )
+            except Exception as e:
+                results[corpus_id] = {"error": str(e)}
+        return {"comparison": results}
+
+    def list_edge_features(self, corpus: str = "hebrew") -> list[dict]:
+        """List available edge features for a corpus."""
+        api = self._ensure_loaded(corpus)
+        result = []
+        for name in api.Eall():
+            eobj = api.Es(name)
+            if eobj is None:
+                continue
+            meta = getattr(eobj, "meta", {}) or {}
+            has_values = getattr(eobj, "doValues", False)
+            result.append(
+                {
+                    "name": name,
+                    "description": meta.get("description", ""),
+                    "has_values": has_values,
+                }
+            )
+        return result
+
+    def get_edge_features(
+        self,
+        node: int,
+        edge_feature: str,
+        direction: str = "from",
+        corpus: str = "hebrew",
+    ) -> dict:
+        """Get edges for a node using a specific edge feature.
+
+        Args:
+            node: Node ID.
+            edge_feature: Edge feature name.
+            direction: "from" (outgoing) or "to" (incoming).
+            corpus: Corpus name.
+        """
+        api = self._ensure_loaded(corpus)
+        eobj = api.Es(edge_feature)
+        if eobj is None:
+            return {"error": f"Edge feature '{edge_feature}' not found"}
+
+        if direction == "to":
+            edges = eobj.t(node)
+        else:
+            edges = eobj.f(node)
+
+        if edges is None:
+            edges = set()
+
+        has_values = getattr(eobj, "doValues", False)
+        results = []
+        for edge in edges:
+            if has_values and isinstance(edge, tuple):
+                target_node, value = edge
+            else:
+                target_node = edge
+                value = None
+
+            otype = api.F.otype.v(target_node)
+            section = api.T.sectionFromNode(target_node)
+            entry: dict[str, Any] = {
+                "node": int(target_node),
+                "type": otype,
+                "text": api.T.text(target_node),
+                "section": {
+                    "book": section[0] if len(section) > 0 else "",
+                    "chapter": section[1] if len(section) > 1 else 0,
+                    "verse": section[2] if len(section) > 2 else 0,
+                },
+            }
+            if value is not None:
+                entry["value"] = str(value)
+            results.append(entry)
+
+        return {
+            "node": node,
+            "edge_feature": edge_feature,
+            "direction": direction,
+            "source_type": api.F.otype.v(node),
+            "edges": results,
+        }
+
+    def compare_feature_distribution(
+        self,
+        feature: str,
+        sections: list[dict],
+        node_type: str = "word",
+        top_n: int = 20,
+    ) -> dict:
+        """Compare feature value distributions across sections.
+
+        Args:
+            feature: Feature name (e.g. "sp", "vs").
+            sections: List of dicts with book (and optionally chapter, corpus).
+            node_type: Object type to count (default "word").
+            top_n: Max values per distribution.
+        """
+        from cfabric_mcp.tools import search as cf_search
+
+        results = {}
+        for sec in sections:
+            corpus = sec.get("corpus", "hebrew")
+            book = sec["book"]
+            chapter = sec.get("chapter")
+
+            if chapter:
+                template = (
+                    f"book book={book}\n  chapter chapter={chapter}\n    {node_type}\n"
+                )
+            else:
+                template = f"book book={book}\n  {node_type}\n"
+
+            self._ensure_loaded(corpus)
+            stats = cf_search(
+                template=template,
+                return_type="statistics",
+                aggregate_features=[feature],
+                top_n=top_n,
+                corpus=corpus,
+            )
+
+            label = f"{book}" + (f" {chapter}" if chapter else "") + f" ({corpus})"
+            results[label] = stats
+
+        return {"feature": feature, "comparison": results}

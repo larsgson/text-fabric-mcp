@@ -149,6 +149,164 @@ _EXPLORATION_TOOLS = [
             "required": ["book", "chapter", "verse"],
         },
     },
+    {
+        "name": "search_syntax_guide",
+        "description": "Get search template syntax documentation. Call without section for overview, or with a section name for details.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "section": {
+                    "type": "string",
+                    "description": "Section: basics, structure, relations, quantifiers, or examples. Omit for summary.",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "describe_feature",
+        "description": "Get detailed info about a feature including sample values sorted by frequency. Use to understand what values a feature can have before searching.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "feature": {
+                    "type": "string",
+                    "description": "Feature name (e.g. 'sp', 'vs', 'vt')",
+                },
+                "sample_limit": {
+                    "type": "integer",
+                    "description": "Max sample values (default 20)",
+                },
+                "corpus": {"type": "string", "description": "Corpus name"},
+            },
+            "required": ["feature"],
+        },
+    },
+    {
+        "name": "list_features",
+        "description": "List features with optional filtering by kind (node/edge) and node type. Lightweight catalog for discovery.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "kind": {"type": "string", "description": "'all', 'node', or 'edge'"},
+                "node_types": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Filter to features for these types (e.g. ['word'])",
+                },
+                "corpus": {"type": "string", "description": "Corpus name"},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "search_advanced",
+        "description": "Search with advanced return types. Use return_type='statistics' for feature distributions, 'count' for totals, 'passages' for formatted text, or 'results' for node details.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "template": {"type": "string", "description": "Search template"},
+                "return_type": {
+                    "type": "string",
+                    "description": "results, count, statistics, or passages",
+                },
+                "aggregate_features": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "For statistics: features to aggregate",
+                },
+                "group_by_section": {
+                    "type": "boolean",
+                    "description": "Include distribution by book",
+                },
+                "top_n": {
+                    "type": "integer",
+                    "description": "Max values per feature distribution",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Page size for results/passages",
+                },
+                "corpus": {"type": "string", "description": "Corpus name"},
+            },
+            "required": ["template"],
+        },
+    },
+    {
+        "name": "search_comparative",
+        "description": "Search the same or adapted pattern across both Hebrew and Greek corpora. Best with return_type='statistics' or 'count' for comparison.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "template_hebrew": {
+                    "type": "string",
+                    "description": "Search template for Hebrew",
+                },
+                "template_greek": {
+                    "type": "string",
+                    "description": "Search template for Greek",
+                },
+                "return_type": {"type": "string", "description": "count or statistics"},
+                "limit": {"type": "integer", "description": "Max results per corpus"},
+            },
+            "required": ["template_hebrew", "template_greek"],
+        },
+    },
+    {
+        "name": "list_edge_features",
+        "description": "List available edge features (relationships between nodes) for a corpus.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "corpus": {"type": "string", "description": "Corpus name"},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "get_edge_features",
+        "description": "Get edges (relationships) for a specific node using an edge feature like 'mother' or 'functional_parent'.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "node": {"type": "integer", "description": "Node ID"},
+                "edge_feature": {"type": "string", "description": "Edge feature name"},
+                "direction": {
+                    "type": "string",
+                    "description": "'from' (outgoing) or 'to' (incoming)",
+                },
+                "corpus": {"type": "string", "description": "Corpus name"},
+            },
+            "required": ["node", "edge_feature"],
+        },
+    },
+    {
+        "name": "compare_distribution",
+        "description": "Compare feature value distributions across books or sections. E.g. compare verb stem usage in Genesis vs Exodus.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "feature": {
+                    "type": "string",
+                    "description": "Feature name (e.g. 'vs', 'sp')",
+                },
+                "sections": {
+                    "type": "array",
+                    "items": {"type": "object"},
+                    "description": "List of {book, chapter?, corpus?} dicts",
+                },
+                "node_type": {
+                    "type": "string",
+                    "description": "Object type (default 'word')",
+                },
+                "top_n": {
+                    "type": "integer",
+                    "description": "Max values per distribution",
+                },
+            },
+            "required": ["feature", "sections"],
+        },
+    },
 ]
 
 _BUILD_QUIZ_TOOL = {
@@ -269,6 +427,53 @@ def _execute_tool(engine: CFEngine, name: str, args: dict[str, Any]) -> Any:
             verse=args["verse"],
             word_index=args.get("word_index", 0),
             corpus=args.get("corpus", "hebrew"),
+        )
+    elif name == "search_syntax_guide":
+        return engine.get_search_syntax_guide(args.get("section"))
+    elif name == "describe_feature":
+        return engine.describe_feature(
+            features=args["feature"],
+            sample_limit=args.get("sample_limit", 20),
+            corpus=args.get("corpus", "hebrew"),
+        )
+    elif name == "list_features":
+        return engine.list_features(
+            kind=args.get("kind", "all"),
+            node_types=args.get("node_types"),
+            corpus=args.get("corpus", "hebrew"),
+        )
+    elif name == "search_advanced":
+        return engine.search_advanced(
+            template=args["template"],
+            return_type=args.get("return_type", "results"),
+            aggregate_features=args.get("aggregate_features"),
+            group_by_section=args.get("group_by_section", False),
+            top_n=args.get("top_n", 50),
+            limit=args.get("limit", 100),
+            corpus=args.get("corpus", "hebrew"),
+        )
+    elif name == "search_comparative":
+        return engine.search_comparative(
+            template_hebrew=args["template_hebrew"],
+            template_greek=args["template_greek"],
+            return_type=args.get("return_type", "count"),
+            limit=args.get("limit", 50),
+        )
+    elif name == "list_edge_features":
+        return engine.list_edge_features(args.get("corpus", "hebrew"))
+    elif name == "get_edge_features":
+        return engine.get_edge_features(
+            node=args["node"],
+            edge_feature=args["edge_feature"],
+            direction=args.get("direction", "from"),
+            corpus=args.get("corpus", "hebrew"),
+        )
+    elif name == "compare_distribution":
+        return engine.compare_feature_distribution(
+            feature=args["feature"],
+            sections=args["sections"],
+            node_type=args.get("node_type", "word"),
+            top_n=args.get("top_n", 20),
         )
     elif name == "build_quiz":
         return _execute_build_quiz(engine, args)

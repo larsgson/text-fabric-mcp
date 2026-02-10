@@ -235,3 +235,103 @@ class TestContext:
         # Should have at least one parent type (phrase, clause, etc.)
         parent_keys = [k for k in data.keys() if k != "word"]
         assert len(parent_keys) > 0
+
+
+# --- Search Syntax Guide ---
+
+
+class TestSearchSyntaxGuide:
+    def test_overview(self, client):
+        resp = client.get("/api/search/syntax-guide")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "sections" in data
+        assert "basics" in data["sections"]
+
+    def test_specific_section(self, client):
+        resp = client.get("/api/search/syntax-guide", params={"section": "basics"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["section"] == "basics"
+        assert "content" in data
+
+
+# --- Features ---
+
+
+class TestFeatures:
+    def test_list_all(self, client):
+        resp = client.get("/api/features", params={"corpus": "hebrew"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "features" in data
+        assert len(data["features"]) > 0
+
+    def test_list_word_features(self, client):
+        resp = client.get(
+            "/api/features", params={"node_types": "word", "corpus": "hebrew"}
+        )
+        assert resp.status_code == 200
+        names = [f["name"] for f in resp.json()["features"]]
+        assert "sp" in names
+
+    def test_describe_sp(self, client):
+        resp = client.get("/api/features/sp", params={"corpus": "hebrew"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "sample_values" in data or "samples" in data
+
+
+# --- Advanced Search ---
+
+
+class TestAdvancedSearch:
+    def test_count(self, client):
+        resp = client.post(
+            "/api/search/advanced",
+            json={
+                "template": "word sp=verb\n",
+                "return_type": "count",
+                "corpus": "hebrew",
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_count"] > 0
+
+    def test_statistics(self, client):
+        resp = client.post(
+            "/api/search/advanced",
+            json={
+                "template": "book book=Genesis\n  chapter chapter=1\n    word sp=verb\n",
+                "return_type": "statistics",
+                "aggregate_features": ["vs", "vt"],
+                "corpus": "hebrew",
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_count"] > 0
+
+
+# --- Edges ---
+
+
+class TestEdges:
+    def test_list_edge_features(self, client):
+        resp = client.get("/api/edges", params={"corpus": "hebrew"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) > 0
+        names = [e["name"] for e in data]
+        assert "mother" in names
+
+    def test_get_edges(self, client):
+        resp = client.get(
+            "/api/edges/mother",
+            params={"node": 1, "direction": "to", "corpus": "hebrew"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["edge_feature"] == "mother"
+        assert "edges" in data
