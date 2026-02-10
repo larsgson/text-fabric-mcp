@@ -1,27 +1,25 @@
-FROM python:3.13-slim
+FROM python:3.13-slim AS base
 WORKDIR /app
 
-# Install Python dependencies (includes context-fabric)
+# ---- Stage 1: Install dependencies + download & compile corpora ----
+# This layer is cached as long as pyproject.toml doesn't change.
+
 COPY pyproject.toml ./
-COPY src/ ./src/
+# Minimal src stub so pip install . can resolve the package
+RUN mkdir -p src/text_fabric_mcp && touch src/text_fabric_mcp/__init__.py
 RUN pip install --no-cache-dir .
 
 # Also install text-fabric for corpus pre-download (build-time only)
 RUN pip install --no-cache-dir "text-fabric>=12.0.0"
 
-# Copy system prompts for chat
-COPY system_prompt.md system_prompt_quiz.md ./
-
 # Pre-download Text-Fabric corpora at build time.
-# The .tf source files are used by Context-Fabric at runtime.
 ENV HOME=/root
 RUN python -c "\
 from tf.app import use; \
 use('ETCBC/bhsa', silent='deep'); \
 use('ETCBC/nestle1904', silent='deep')" \
  && test -f /root/text-fabric-data/github/ETCBC/bhsa/tf/2021/otext.tf \
- && echo '=== Corpus pre-download OK ===' \
- && find /root/text-fabric-data -maxdepth 4 -type d | head -20
+ && echo '=== Corpus pre-download OK ==='
 
 # Pre-compile .cfm caches at build time to avoid memory spike at runtime.
 # Each corpus is compiled in a SEPARATE Python process so memory is freed
@@ -48,6 +46,13 @@ print('Compiled: Nestle1904')" \
        /root/text-fabric-data/github/ETCBC/nestle1904/tf/*/nodeId.tf 2>/dev/null; \
     test -d /root/text-fabric-data/github/ETCBC/nestle1904/tf/0.4.0/.cfm \
  && echo '=== Nestle1904 .cfm OK ==='
+
+# ---- Stage 2: Copy application code (changes frequently) ----
+# Only this layer rebuilds when src/ or prompt files change.
+
+COPY src/ ./src/
+RUN pip install --no-cache-dir .
+COPY system_prompt.md system_prompt_quiz.md ./
 
 # At runtime, HOME=/data (persistent volume).
 # Pre-compiled .cfm caches are copied to the volume on first boot.

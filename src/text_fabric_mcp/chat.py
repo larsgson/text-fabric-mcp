@@ -563,6 +563,23 @@ def _chat_loop(
             config=config,
         )
 
+        # Guard against empty responses (safety filters, overloaded model, etc.)
+        if (
+            not response.candidates
+            or response.candidates[0].content is None
+            or not response.candidates[0].content.parts
+        ):
+            reason = (
+                getattr(response.candidates[0], "finish_reason", "unknown")
+                if response.candidates
+                else "no candidates"
+            )
+            logger.warning("Gemini returned empty content: %s", reason)
+            return {
+                "reply": "I wasn't able to generate a response. Please try rephrasing your question.",
+                "tool_calls": tool_calls_log,
+            }
+
         candidate = response.candidates[0]
 
         function_calls = [
@@ -574,7 +591,8 @@ def _chat_loop(
         if not function_calls:
             text_parts = [part.text for part in candidate.content.parts if part.text]
             return {
-                "reply": "\n".join(text_parts),
+                "reply": "\n".join(text_parts)
+                or "I wasn't able to generate a response.",
                 "tool_calls": tool_calls_log,
             }
 
