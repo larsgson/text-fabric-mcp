@@ -47,6 +47,15 @@ This starts the MCP (Model Context Protocol) server for use with Claude Desktop 
 | GET | `/api/schema?corpus=hebrew` | Corpus object types and features |
 | POST | `/api/search/words` | Search by morphological features |
 | POST | `/api/search/constructions` | Structural pattern matching |
+| GET | `/api/search/syntax-guide` | Search template syntax documentation |
+| POST | `/api/search/advanced` | Search with statistics, count, or passage grouping |
+| POST | `/api/search/continue` | Cursor-based pagination for search results |
+| POST | `/api/search/comparative` | Cross-corpus search (Hebrew + Greek) |
+| GET | `/api/features?node_types=word` | List features with optional filtering |
+| GET | `/api/features/{feature}` | Feature details with sample values |
+| GET | `/api/edges` | List edge features (linguistic relationships) |
+| GET | `/api/edges/{feature}?node=1` | Get edges from/to a node |
+| POST | `/api/compare/distribution` | Compare feature distributions across sections |
 | GET | `/api/lexeme/{lexeme}` | Lexeme lookup with occurrences |
 | GET | `/api/vocabulary?book=Genesis&chapter=1` | Unique lexemes in a passage |
 | GET | `/api/context?book=Genesis&chapter=1&verse=1` | Syntactic hierarchy for a word |
@@ -62,6 +71,11 @@ When running as an MCP server, the following tools are available to AI assistant
 - `list_corpora`, `list_books`, `get_schema` -- corpus introspection
 - `get_passage`, `get_word_context` -- text retrieval
 - `search_words`, `search_constructions` -- linguistic search
+- `search_advanced`, `search_comparative` -- advanced search with statistics and cross-corpus comparison
+- `search_syntax_guide` -- search template syntax documentation
+- `describe_feature`, `list_features` -- feature discovery with sample values
+- `list_edge_features`, `get_edge_features` -- linguistic relationship exploration
+- `compare_distribution` -- feature distribution comparison across sections
 - `get_lexeme_info`, `get_vocabulary` -- vocabulary queries
 - `build_quiz` -- build and validate a quiz definition (returns JSON, no server-side storage)
 
