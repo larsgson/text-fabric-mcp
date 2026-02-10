@@ -388,7 +388,7 @@ def _provision_corpus_data():
         return  # Local dev — no volume
 
     # Marker version: bump to force re-provisioning after image changes.
-    marker = data_dir / "text-fabric-data" / ".cache-v4"
+    marker = data_dir / "text-fabric-data" / ".cache-v5"
     for d in ["/data/text-fabric-data", "/data/quizzes"]:
         Path(d).mkdir(parents=True, exist_ok=True)
 
@@ -397,23 +397,42 @@ def _provision_corpus_data():
 
     if not marker.exists() and src.exists():
         logger.info("Provisioning corpus data from Docker image...")
+
+        # Log what we're copying (especially .cfm caches)
+        cfm_dirs = list(src.rglob(".cfm"))
+        logger.info("Source .cfm cache dirs: %s", [str(d) for d in cfm_dirs])
+
         github_dst = dst / "github"
         if github_dst.exists():
             shutil.rmtree(github_dst)
         # Copy .tf source files AND pre-compiled .cfm caches
         shutil.copytree(src, dst, dirs_exist_ok=True)
 
-        # Remove stale TF .tf compile caches (not the .tf source files)
+        # Remove stale TF .tf compile caches (directories named ".tf",
+        # NOT the .tf source files which are regular files)
         for tf_cache in dst.rglob(".tf"):
             if tf_cache.is_dir():
+                logger.info("Removing TF compile cache: %s", tf_cache)
                 shutil.rmtree(tf_cache)
 
+        # Remove stale markers from previous versions
+        for old in dst.glob(".cache-v*"):
+            if old != marker:
+                old.unlink(missing_ok=True)
+
         marker.touch()
-        logger.info("Corpus data provisioned with pre-compiled .cfm caches.")
-    elif not src.exists() and not marker.exists():
+
+        # Verify .cfm caches survived
+        cfm_result = list(dst.rglob(".cfm"))
+        logger.info("Provisioned .cfm cache dirs: %s", [str(d) for d in cfm_result])
+        logger.info("Corpus data provisioned.")
+    elif marker.exists():
+        logger.info("Corpus data already provisioned (marker: %s).", marker.name)
+    elif not src.exists():
         logger.warning(
-            "No pre-downloaded corpus data found. "
-            "Corpora will need to be available at runtime."
+            "No pre-downloaded corpus data found at %s. "
+            "Corpora will need to be available at runtime.",
+            src,
         )
 
 

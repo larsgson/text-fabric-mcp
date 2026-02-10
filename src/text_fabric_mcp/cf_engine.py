@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -124,6 +125,7 @@ class CFEngine:
     def __init__(self) -> None:
         self._apis: dict[str, Api] = {}
         self._fabrics: dict[str, cfabric.Fabric] = {}
+        self._load_lock = threading.Lock()
 
     def _ensure_loaded(self, corpus: str) -> Api:
         """Load a corpus if not already loaded, return the CF Api."""
@@ -131,7 +133,13 @@ class CFEngine:
             raise ValueError(
                 f"Unknown corpus '{corpus}'. Available: {list(CORPORA.keys())}"
             )
-        if corpus not in self._apis:
+        # Fast path: already loaded (no lock needed)
+        if corpus in self._apis:
+            return self._apis[corpus]
+        # Slow path: acquire lock, double-check, then load
+        with self._load_lock:
+            if corpus in self._apis:
+                return self._apis[corpus]
             org_repo, display_name = CORPORA[corpus]
             logger.info(
                 "Loading %s (%s) via Context-Fabric ...", display_name, org_repo

@@ -24,19 +24,30 @@ use('ETCBC/nestle1904', silent='deep')" \
  && find /root/text-fabric-data -maxdepth 4 -type d | head -20
 
 # Pre-compile .cfm caches at build time to avoid memory spike at runtime.
-# Hide nodeId.tf for Greek (int32 overflow in CF 0.5.x).
+# Each corpus is compiled in a SEPARATE Python process so memory is freed
+# between them (BHSA alone needs ~3.5 GiB during compilation).
+
+# 1) Compile Hebrew (BHSA)
+RUN python -c "\
+import cfabric; \
+CF = cfabric.Fabric(locations='/root/text-fabric-data/github/ETCBC/bhsa/tf/2021', silent=True); \
+CF.loadAll(silent=True); \
+print('Compiled: BHSA')" \
+ && test -d /root/text-fabric-data/github/ETCBC/bhsa/tf/2021/.cfm \
+ && echo '=== BHSA .cfm OK ==='
+
+# 2) Compile Greek (Nestle1904) — hide nodeId.tf first (int32 overflow in CF 0.5.x)
 RUN mv /root/text-fabric-data/github/ETCBC/nestle1904/tf/*/nodeId.tf \
        /root/text-fabric-data/github/ETCBC/nestle1904/tf/nodeId.tf._skip 2>/dev/null; \
     python -c "\
 import cfabric; \
-for path in ['/root/text-fabric-data/github/ETCBC/bhsa/tf/2021', \
-             '/root/text-fabric-data/github/ETCBC/nestle1904/tf/0.4.0']: \
-    CF = cfabric.Fabric(locations=path, silent=True); \
-    CF.loadAll(silent=True); \
-    print(f'Compiled: {path}')" \
+CF = cfabric.Fabric(locations='/root/text-fabric-data/github/ETCBC/nestle1904/tf/0.4.0', silent=True); \
+CF.loadAll(silent=True); \
+print('Compiled: Nestle1904')" \
  && mv /root/text-fabric-data/github/ETCBC/nestle1904/tf/nodeId.tf._skip \
        /root/text-fabric-data/github/ETCBC/nestle1904/tf/*/nodeId.tf 2>/dev/null; \
-    echo '=== CFM pre-compilation OK ==='
+    test -d /root/text-fabric-data/github/ETCBC/nestle1904/tf/0.4.0/.cfm \
+ && echo '=== Nestle1904 .cfm OK ==='
 
 # At runtime, HOME=/data (persistent volume).
 # Pre-compiled .cfm caches are copied to the volume on first boot.
